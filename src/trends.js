@@ -5,7 +5,7 @@ import { STACK_ORDER, fmtDuration, fmtTime, num, renderChartTable, renderOutageC
 const seriesColors = () => shadeForTheme(ctx.colors());
 
 const HOUR = 3600_000;
-const RANGES = { "6h": 6 * HOUR, "24h": 24 * HOUR, "3d": 72 * HOUR, "7d": 168 * HOUR, "30d": 720 * HOUR, all: null };
+const RANGES = { "6h": 6 * HOUR, "12h": 12 * HOUR, "24h": 24 * HOUR, "3d": 72 * HOUR, "7d": 168 * HOUR, "30d": 720 * HOUR, all: null };
 const NICE_BUCKETS = [5, 10, 15, 30, 60, 120, 180, 360, 720, 1440].map((m) => m * 60000);
 
 const $ = (s) => document.querySelector(s);

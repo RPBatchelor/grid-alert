@@ -2,13 +2,15 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0b1217" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#eef2f4" />
     <title>Grid Alert Victoria</title>
     <script>
       try {
-        const t = JSON.parse(localStorage.getItem("settings") || "{}").theme || "dark";
+        const s = JSON.parse(localStorage.getItem("settings") || "{}");
+        const t = s.theme || "light";
         document.documentElement.dataset.theme = t === "system" ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : t;
+        if (s.accent && s.accent !== "teal") document.documentElement.dataset.accent = s.accent;
       } catch {}
     </script>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%23143a31'/%3E%3Cpath d='M13 3 5 14h6l-1 7 8-11h-6l1-7Z' fill='%235bdbb2'/%3E%3C/svg%3E" />
@@ -184,6 +186,7 @@
         <div class="tr-filters" role="toolbar" aria-label="Trend filters">
           <div class="seg tr-seg" id="tr-range" aria-label="Time range">
             <button type="button" data-value="6h">6 h</button>
+            <button type="button" data-value="12h">12 h</button>
             <button type="button" data-value="24h">24 h</button>
             <button type="button" data-value="3d">3 d</button>
             <button type="button" data-value="7d">7 d</button>
@@ -369,6 +372,34 @@
       <div class="legend" id="legend"></div>
     </div>
 
+    <!-- Shown every time the app opens; the same text heads Settings → About. -->
+    <template id="disclaimer-template">
+      <div class="disclaimer-text">
+        <p><b>Grid Alert Victoria is an experimental decision-support tool.</b> It brings together weather forecasts, fire danger information and live outage data to support situational awareness during major events in Victoria. It is not an authoritative source and should not be relied on as a source of truth.</p>
+        <p><b>Information may be incomplete, delayed or wrong:</b></p>
+        <ul>
+          <li><b>Outage data</b> is read from each distributor's public outage tracker. These are unofficial feeds that can change, lag or fail without notice.</li>
+          <li><b>Weather</b> is modelled forecast data (Open-Meteo), not observations or official warnings.</li>
+          <li><b>Fire danger, Total Fire Ban and Fire Danger Period</b> details come from CFA web pages and may not reflect the latest declarations.</li>
+          <li><b>Automated callouts</b> come from simple rules and may miss risks or overstate them.</li>
+        </ul>
+        <p><b>Always confirm with official sources before acting.</b> These include your organisation's operational systems, Bureau of Meteorology warnings, and CFA / VicEmergency. Do not use this tool on its own for safety-critical or switching decisions.</p>
+        <p>This tool is independent. It is not an official product of, or endorsed by, AusNet, Powercor, CitiPower, Jemena, United Energy, the Bureau of Meteorology or CFA. In an emergency, call Triple Zero (000).</p>
+      </div>
+    </template>
+    <dialog id="disclaimer" class="disclaimer" aria-labelledby="disclaimer-title">
+      <div class="disclaimer-head">
+        <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg></div>
+        <div>
+          <h2 id="disclaimer-title">Before you continue</h2>
+          <div class="setting-help">Grid Alert Victoria · experimental</div>
+        </div>
+      </div>
+      <div class="disclaimer-body" data-disclaimer></div>
+      <p class="disclaimer-meta"><span id="disclaimer-version"></span> · Ryan Batchelor · Data: AusNet, Powercor/CitiPower, Jemena and United Energy outage trackers; Open-Meteo; RainViewer; CFA; DataVic (Vicmap); ABS. Full details in Settings → About.</p>
+      <div class="disclaimer-actions"><button type="button" class="btn primary" id="disclaimer-ok">I understand</button></div>
+    </dialog>
+
     <dialog id="settings" class="settings" aria-labelledby="settings-title">
       <div class="settings-shell">
         <nav class="settings-nav" aria-label="Settings sections">
@@ -412,6 +443,11 @@
                 <button type="button" class="theme-option" role="radio" data-theme-choice="dark"><div class="theme-preview tp-dark"><span class="tp-bar"></span><span class="tp-side"></span><span class="tp-map"></span></div>Dark</button>
                 <button type="button" class="theme-option" role="radio" data-theme-choice="system"><div class="theme-preview tp-system"><span class="tp-bar"></span><span class="tp-side"></span><span class="tp-map"></span></div>Match system</button>
               </div>
+            </div>
+            <div class="settings-group">
+              <h4>Accent colour</h4>
+              <p>Used for the selected page, highlights, check boxes, switches and main buttons.</p>
+              <div class="accent-options" id="accent-options" role="radiogroup" aria-label="Accent colour"></div>
             </div>
             <div class="settings-group">
               <div class="setting">
@@ -511,6 +547,7 @@
 
           <section data-panel="about" aria-labelledby="sa-title" hidden>
             <h3 id="sa-title">About</h3>
+            <div class="settings-group about-disclaimer" data-disclaimer></div>
             <div class="settings-group about-app">
               <div class="about-head">
                 <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg></div>
@@ -629,6 +666,14 @@
         <div class="dialog-actions"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Save</button></div>
       </form>
     </dialog>
+
+    <!-- Phones only: bottom tab bar (the sidebar opens from "Menu" as a drawer). -->
+    <nav class="mobile-tabs" id="mobile-tabs" aria-label="Pages">
+      <button type="button" data-tab="map"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m3 6 6-2 6 2 6-2v14l-6 2-6-2-6 2V6Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /><path d="M9 4v14m6-12v14" stroke="currentColor" stroke-width="1.7" /></svg>Map</button>
+      <button type="button" data-tab="trends"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20h16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /><path d="M6 17v-4m4 4V9m4 8v-6m4 6V6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" /></svg>Trends</button>
+      <button type="button" data-tab="events"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 21V4h10l-1 4h6l-2 7h-8l1-4H5" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /></svg>Events</button>
+      <button type="button" data-tab="menu" aria-controls="sidebar"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>Menu</button>
+    </nav>
 
     <div class="toast" id="toast" role="status" hidden></div>
     <script type="module" src="/src/main.js"></script>

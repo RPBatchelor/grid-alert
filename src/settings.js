@@ -5,7 +5,8 @@ import { contrast } from "./color.js";
 import { DEFAULT_COLORS, NETWORKS } from "./intel.js";
 
 const DEFAULTS = {
-  theme: "dark", // dark | light | system
+  theme: "light", // light | dark | system
+  accent: "teal", // key of ACCENTS
   defaultView: "map", // map | trends
   colors: { ...DEFAULT_COLORS },
   weatherOpacity: 0.62,
@@ -67,9 +68,14 @@ export function resolvedTheme() {
   return settings.theme === "system" ? (darkQuery.matches ? "dark" : "light") : settings.theme;
 }
 
+// Accent colours; the swatch is the light-mode accent. Tokens live in style.css.
+export const ACCENTS = { teal: ["Teal", "#0f8f6c"], blue: ["Blue", "#2266b0"], indigo: ["Indigo", "#4f56b8"], plum: ["Plum", "#8a4a8f"], rose: ["Rose", "#a64d6a"], slate: ["Slate", "#4a6375"] };
+
 export function applyTheme() {
   const theme = resolvedTheme();
   document.documentElement.dataset.theme = theme;
+  if (settings.accent && settings.accent !== "teal" && ACCENTS[settings.accent]) document.documentElement.dataset.accent = settings.accent;
+  else delete document.documentElement.dataset.accent;
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "dark" ? "#0b1217" : "#eef2f4");
   return theme;
 }
@@ -89,6 +95,20 @@ function showSection(name) {
   });
   document.querySelectorAll(".settings-body [data-panel]").forEach((p) => (p.hidden = p.dataset.panel !== name));
   store.set("settingsSection", name);
+}
+
+function renderAccentChoice() {
+  const root = $("#accent-options");
+  root.innerHTML = Object.entries(ACCENTS)
+    .map(([key, [label, color]]) => `<button type="button" class="accent-option${settings.accent === key ? " active" : ""}" role="radio" aria-checked="${settings.accent === key}" data-accent-choice="${key}" style="--dot:${color}"><span class="accent-dot" aria-hidden="true"></span>${label}</button>`)
+    .join("");
+  root.querySelectorAll("[data-accent-choice]").forEach((b) =>
+    b.addEventListener("click", () => {
+      set("accent", b.dataset.accentChoice);
+      applyTheme();
+      renderAccentChoice();
+    }),
+  );
 }
 
 function renderThemeChoice() {
@@ -218,6 +238,7 @@ async function renderHistoryStats() {
 }
 
 function syncControls() {
+  renderAccentChoice();
   renderThemeChoice();
   renderColorRows();
   renderBasemapCards();

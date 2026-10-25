@@ -61,7 +61,10 @@ export function initUsers(opts = {}) {
       /* ignore */
     }
     history.replaceState(null, "", location.pathname + location.hash);
-    $("#settings-button").click();
+    // Open once the disclaimer has been accepted, so the two dialogs don't stack.
+    const open = () => $("#settings-button").click();
+    if ($("#disclaimer")?.open) $("#disclaimer-ok").addEventListener("click", () => setTimeout(open, 0), { once: true });
+    else open();
   }
 }
 

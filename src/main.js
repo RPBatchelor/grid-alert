@@ -15,6 +15,11 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const num = (n) => Math.round(n).toLocaleString("en-AU");
 const TZ = "Australia/Melbourne";
 
+// Phones (≤ 700px) get a vertical layout: the map as a block at the top, then the timeline and
+// panels, with a bottom tab bar. Layout lives in the "Phone layout" section of style.css.
+const phoneQuery = matchMedia("(max-width: 700px)");
+const isPhone = () => phoneQuery.matches;
+
 const store = {
   get(key, fallback) {
     try {
@@ -180,6 +185,11 @@ function legendHeight() {
 
 // Screen space not covered by the sidebar, outputs column, top bar and timeline.
 function mapViewport() {
+  if (isPhone()) {
+    // The map is its own block on phones; nothing overlays it.
+    const { x, y } = state.map.getSize();
+    return { left: 10, right: x - 10, top: 10, bottom: y - 10, width: x, height: y };
+  }
   const outputs = $("#outputs");
   const outRect = outputs && getComputedStyle(outputs).display !== "none" ? outputs.getBoundingClientRect() : null;
   const narrow = window.innerWidth < 1100;
@@ -193,6 +203,8 @@ function mapViewport() {
     top: narrow ? 130 : 70,
     // Above the timeline, and above the colour legend when it is showing (lower right).
     bottom: window.innerHeight - (document.body.classList.contains("windy-mode") ? 130 : 84) - legendHeight(),
+    width: window.innerWidth,
+    height: window.innerHeight,
   };
 }
 
@@ -200,7 +212,7 @@ function fitVictoria() {
   const v = mapViewport();
   state.map.fitBounds([[-39.2, 140.9], [-33.98, 150.0]], {
     paddingTopLeft: [v.left, v.top],
-    paddingBottomRight: [window.innerWidth - v.right, window.innerHeight - v.bottom + 10],
+    paddingBottomRight: [v.width - v.right, v.height - v.bottom + 10],
     animate: false,
   });
 }
@@ -469,6 +481,7 @@ function renderWindCallouts() {
   $("#callout-dock").querySelectorAll(".callout.docked").forEach((n) => n.remove());
   dock.items = {};
   updateLeaders();
+  if (isPhone()) return; // no room for docked callouts on a phone
   if (!$("#t-windcallouts").checked || !state.weather || !state.samplePoints) return;
   const strongest = strongestWind(state.weather, state.samplePoints, state.t);
   const when = hourLabel(state.weather.times[state.t]);
@@ -514,28 +527,64 @@ function renderWindCallouts() {
 
 const SEVERITY_LABEL = { severe: "Severe", high: "High", warn: "Data", elevated: "Elevated", info: "Info" };
 
+// Dismissed callouts stay hidden for a day in this browser. The key ignores numbers, so a
+// callout stays dismissed as its figures update ("gusts to 73" → "75 km/h"), but includes the
+// severity, so it comes back if it escalates.
+const DISMISS_MS = 24 * 3600e3;
+const insightKey = (x) => `${x.severity}|${x.title.replace(/\d+/g, "#")}`;
+function dismissedInsights() {
+  let saved = {};
+  try {
+    saved = JSON.parse(store.get("dismissedInsights", "{}"));
+  } catch {
+    /* corrupt value: start afresh */
+  }
+  return Object.fromEntries(Object.entries(saved).filter(([, ts]) => Date.now() - ts < DISMISS_MS));
+}
+
 function renderInsights() {
   if (!state.outages) return;
   const rank = { severe: 0, high: 1, warn: 2, elevated: 3, info: 4 };
-  const list = [...buildInsights({ outages: state.outages, previous: state.previous, weather: state.weather, samplePoints: state.samplePoints ?? {} }), ...fireInsights(), ...fdpInsights()].sort((a, b) => rank[a.severity] - rank[b.severity]);
+  const all = [...buildInsights({ outages: state.outages, previous: state.previous, weather: state.weather, samplePoints: state.samplePoints ?? {} }), ...fireInsights(), ...fdpInsights()].sort((a, b) => rank[a.severity] - rank[b.severity]);
+  const dismissed = dismissedInsights();
+  const list = all.filter((x) => !dismissed[insightKey(x)]);
+  const hidden = all.length - list.length;
   const root = $("#insights");
   $("#insight-count").textContent = `${list.length} active`;
+  const restore = hidden ? `<button class="link-button insights-restore" type="button">Show ${hidden} dismissed</button>` : "";
   if (!list.length) {
-    root.innerHTML = '<div class="empty">No callouts. Unplanned outages are below thresholds and no forecast gusts ≥ 55 km/h in the next 24 h.</div>';
-    return;
-  }
-  root.innerHTML = list
-    .map((x, idx) => `<button class="insight sev-${x.severity}" type="button" data-idx="${idx}" style="--c:${x.color ?? NETWORKS[x.network]?.color ?? "#9ab"}">
+    root.innerHTML = (hidden ? '<div class="empty">All callouts dismissed.</div>' : '<div class="empty">No callouts. Unplanned outages are below thresholds and no forecast gusts ≥ 55 km/h in the next 24 h.</div>') + restore;
+  } else {
+    root.innerHTML =
+      list
+        .map((x, idx) => `<div class="insight sev-${x.severity}" role="button" tabindex="0" data-idx="${idx}" style="--c:${x.color ?? NETWORKS[x.network]?.color ?? "#9ab"}">
       <span class="sev">${SEVERITY_LABEL[x.severity]}</span>
+      <button class="insight-x" type="button" title="Dismiss for 24 hours" aria-label="Dismiss: ${esc(x.title)}">×</button>
       <span class="insight-title">${esc(x.title)}</span>
-      <span class="insight-detail">${esc(x.detail)}</span></button>`)
-    .join("");
-  root.querySelectorAll(".insight").forEach((el) =>
-    el.addEventListener("click", () => {
-      const at = list[+el.dataset.idx].at;
-      if (at) state.map.flyTo(at, 9);
-    }),
-  );
+      <span class="insight-detail">${esc(x.detail)}</span></div>`)
+        .join("") + restore;
+  }
+  root.querySelectorAll(".insight").forEach((el) => {
+    const x = list[+el.dataset.idx];
+    const go = () => x.at && state.map.flyTo(x.at, 9);
+    el.addEventListener("click", (e) => {
+      if (!e.target.closest(".insight-x")) go();
+    });
+    el.addEventListener("keydown", (e) => {
+      if ((e.key === "Enter" || e.key === " ") && e.target === el) {
+        e.preventDefault();
+        go();
+      }
+    });
+    el.querySelector(".insight-x").addEventListener("click", () => {
+      store.set("dismissedInsights", JSON.stringify({ ...dismissedInsights(), [insightKey(x)]: Date.now() }));
+      renderInsights();
+    });
+  });
+  root.querySelector(".insights-restore")?.addEventListener("click", () => {
+    store.set("dismissedInsights", "{}");
+    renderInsights();
+  });
 }
 
 // ---- Boundaries -------------------------------------------------------------------------
@@ -771,10 +820,12 @@ function setView(view, id = null) {
   document.body.classList.toggle("view-page", view !== "map");
   $("#trends").hidden = view !== "trends";
   $("#events").hidden = view !== "events";
-  document.querySelectorAll(".sb-item[data-view]").forEach((b) => {
-    b.classList.toggle("active", b.dataset.view === view);
-    b.setAttribute("aria-current", b.dataset.view === view ? "page" : "false");
+  document.querySelectorAll(".sb-item[data-view], #mobile-tabs [data-tab]").forEach((b) => {
+    const on = (b.dataset.view ?? b.dataset.tab) === view;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-current", on ? "page" : "false");
   });
+  if (isPhone()) window.scrollTo(0, 0);
   $("#sb-layers-group").hidden = view !== "map";
   const hash = view === "map" ? "" : `#${view}${id != null ? `/${id}` : ""}`;
   if (location.hash !== hash) history.replaceState(null, "", hash || location.pathname);
@@ -798,7 +849,7 @@ function setSidebar({ open = document.body.classList.contains("sb-open"), pinned
   $("#sb-pin").title = pinned ? "Unpin sidebar" : "Pin sidebar open";
   $("#sb-toggle").setAttribute("aria-expanded", String(open || pinned));
   $("#sb-toggle").title = open || pinned ? "Collapse sidebar" : "Expand sidebar";
-  store.set("sidebarPinned", pinned ? "1" : "0");
+  if (!isPhone()) store.set("sidebarPinned", pinned ? "1" : "0"); // phones never pin
   if (pinned !== wasPinned && state.map) {
     // Reserved space changed: shift the map so the same area stays centred in the visible
     // part, and keep callouts inside it.
@@ -814,8 +865,52 @@ function closeSidebar() {
   if (document.body.classList.contains("sb-open")) setSidebar({ open: false });
 }
 
+// Switch between the desktop overlay layout and the phone layout (also on rotate/resize).
+function applyPhoneLayout() {
+  const phone = isPhone();
+  document.body.classList.toggle("phone", phone);
+  if (!phone) document.body.classList.remove("map-expanded");
+  setSidebar({ open: false, pinned: !phone && store.get("sidebarPinned", "0") === "1" });
+  if (!state.map) return;
+  state.map.invalidateSize();
+  fitVictoria();
+  renderWindCallouts();
+}
+
+// Phone only: grow the map to the full screen height and back.
+function addMapExpandControl() {
+  const Expand = L.Control.extend({
+    onAdd() {
+      const b = L.DomUtil.create("button", "map-expand");
+      b.type = "button";
+      b.id = "map-expand";
+      b.title = "Expand map";
+      b.setAttribute("aria-pressed", "false");
+      b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" /></svg>';
+      L.DomEvent.disableClickPropagation(b);
+      L.DomEvent.on(b, "click", () => {
+        const expanded = document.body.classList.toggle("map-expanded");
+        b.setAttribute("aria-pressed", String(expanded));
+        b.title = expanded ? "Shrink map" : "Expand map";
+        window.scrollTo(0, 0);
+        requestAnimationFrame(() => state.map.invalidateSize());
+      });
+      return b;
+    },
+  });
+  new Expand({ position: "topright" }).addTo(state.map);
+}
+
 function wireLayout() {
-  setSidebar({ open: false, pinned: store.get("sidebarPinned", "0") === "1" });
+  applyPhoneLayout();
+  phoneQuery.addEventListener("change", applyPhoneLayout);
+  addMapExpandControl();
+  document.querySelectorAll("#mobile-tabs [data-tab]").forEach((b) =>
+    b.addEventListener("click", () => {
+      if (b.dataset.tab === "menu") setSidebar({ open: !document.body.classList.contains("sb-open") });
+      else setView(b.dataset.tab);
+    }),
+  );
   document.querySelectorAll(".sb-item[data-view]").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
   $("#sb-layers-btn").addEventListener("click", () => {
     if (document.body.classList.contains("sb-pinned")) return;
@@ -913,8 +1008,27 @@ function wireControls() {
   });
 }
 
+// Disclaimer: shown on every app open and closed only with "I understand" (not Esc or a
+// backdrop click). The same text heads Settings → About.
+function showDisclaimer() {
+  const text = $("#disclaimer-template").content;
+  document.querySelectorAll("[data-disclaimer]").forEach((el) => el.replaceChildren(text.cloneNode(true)));
+  $("#disclaimer-version").textContent = `Version ${__APP_VERSION__}`;
+  const dialog = $("#disclaimer");
+  let accepted = false;
+  dialog.addEventListener("cancel", (e) => e.preventDefault());
+  dialog.addEventListener("close", () => !accepted && dialog.showModal());
+  $("#disclaimer-ok").addEventListener("click", () => {
+    accepted = true;
+    dialog.close();
+  });
+  dialog.showModal();
+  $("#disclaimer-ok").focus();
+}
+
 async function boot() {
   await requireUser();
+  showDisclaimer();
   const settings = loadSettings(store);
   setNetworkColors(settings.colors);
   applyTheme();

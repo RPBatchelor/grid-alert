@@ -213,7 +213,13 @@ input:focus-visible + .switch-track { outline: 2px solid var(--accent); outline-
 
 .insights { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; scrollbar-width: thin; }
 .insight { display: grid; gap: 3px; padding: 8px 9px; border: 1px solid var(--line); border-left: 4px solid var(--c); border-radius: 7px; background: var(--surface); text-align: left; }
+.insight { position: relative; cursor: pointer; }
 .insight:hover { background: var(--hover); }
+.insight-x { position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 17px; line-height: 1; opacity: 0.55; }
+.insight:hover .insight-x, .insight-x:focus-visible { opacity: 1; }
+.insight-x:hover { background: var(--surface-3); color: var(--text); }
+.insight .insight-title { padding-right: 18px; }
+.insights-restore { align-self: center; margin: 2px 0 4px; }
 .insight .sev { justify-self: start; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; background: var(--sev-default); color: var(--sev-default-ink); }
 .sev-severe .sev { background: var(--sev-severe); color: var(--sev-severe-ink); }
 .sev-high .sev { background: var(--sev-high); color: var(--sev-high-ink); }
@@ -310,6 +316,8 @@ dialog.settings::backdrop { background: var(--backdrop); backdrop-filter: blur(2
 .settings-body h3 { margin: 0; font-size: 17px; font-weight: 700; }
 .settings-group { display: grid; gap: 10px; padding-top: 16px; border-top: 1px solid var(--line); }
 .settings-group:first-of-type { padding-top: 0; border-top: 0; }
+.about-disclaimer { padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.about-disclaimer + .settings-group { padding-top: 0; border-top: 0; }
 .settings-group h4 { margin: 0; font-size: 13.5px; font-weight: 700; }
 .setting { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .setting-label { font-weight: 600; }
@@ -372,8 +380,6 @@ dialog.settings::backdrop { background: var(--backdrop); backdrop-filter: blur(2
   .leaflet-top.leaflet-left { margin-top: 124px; }
 }
 @media (max-width: 700px) {
-  .live-switch #live-label { display: none; }
-  .legend { display: none; }
   .settings-shell { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
   .settings-nav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 10px; }
   .settings-nav h2 { display: none; }
@@ -385,7 +391,7 @@ dialog.settings::backdrop { background: var(--backdrop); backdrop-filter: blur(2
 }
 
 /* ---- Trends view ---- */
-.trends, .page { position: fixed; z-index: 950; inset: 0; padding: 58px 0 0 calc(var(--left-w) - 10px); overflow-y: auto; background: var(--bg); }
+.trends, .page { position: fixed; z-index: 950; inset: 0; padding: calc(var(--brand-h) + 30px) 0 0 calc(var(--left-w) - 10px); overflow-y: auto; background: var(--bg); }
 .trends.loading .tr-chart, .trends.loading .tr-tiles, .page.loading .tr-chart, .page.loading .tr-tiles, .page.loading .ev-table { opacity: 0.6; transition: opacity 0.2s; }
 .trends-inner { max-width: 1500px; margin: 0 auto; padding: 14px 16px 32px; display: grid; gap: 16px; }
 /* Events list/detail wrap their sections in a view container: space those sections too.
@@ -484,30 +490,8 @@ dialog.settings::backdrop { background: var(--backdrop); backdrop-filter: blur(2
   :root { --out-w: 290px; }
   .outputs { top: 124px; }
 }
-@media (max-width: 700px) {
-  body { --right-w: 10px; }
-  /* Outputs become a bottom sheet above the timeline. */
-  .outputs { top: auto; bottom: 92px; left: var(--left-w); right: 8px; width: auto; max-height: 44vh; }
-  .outputs { overflow-y: auto; }
-  .window, .window[data-win="intel"], .window[data-win="networks"] { flex: none; max-height: none; }
-  .win-body { overflow: visible; }
-  .sb-open .sidebar { width: min(var(--sb-open), calc(100vw - 20px)); }
-  #callout-dock { display: none; }
-}
 @media (max-width: 1100px) {
   .topbar { left: calc(var(--sb-open) + 20px); }
-}
-@media (max-width: 700px) {
-  :root { --brand-h: 48px; }
-  .app-brand { width: auto; max-width: calc(100vw - 130px); }
-  #refresh-button span { display: none; }
-  #refresh-button { width: 36px; padding: 0; }
-  .app-brand .brand-sub { display: none; }
-  .app-brand .brand-name { font-size: 12.5px; }
-  .topbar { left: 10px; top: calc(var(--brand-h) + 18px); grid-template-columns: auto; justify-items: end; }
-  .topbar-spacer { display: none; }
-  .topbar-actions { position: fixed; top: 10px; right: 10px; }
-  .updated-banner { grid-column: 1; grid-row: 1; justify-self: end; margin-left: calc(var(--rail) + 8px); }
 }
 
 /* ---- Events: top-bar control ---- */
@@ -523,7 +507,6 @@ dialog.settings::backdrop { background: var(--backdrop); backdrop-filter: blur(2
 .event-stop, #ev-stop { min-height: 28px; border-color: #e5484d; background: var(--surface); color: #e5484d; font-weight: 700; }
 .event-stop:hover, #ev-stop:hover { background: #e5484d; color: #fff; }
 @media (max-width: 1100px) { .event-pill-name { max-width: 120px; } }
-@media (max-width: 700px) { .event-start span, .event-pill-name { display: none; } .event-start { width: 36px; padding: 0; } }
 
 /* ---- Events page ---- */
 .events-page .trends-inner { padding-top: 22px; }
@@ -601,14 +584,6 @@ dialog.form-dialog::backdrop { background: var(--backdrop); backdrop-filter: blu
 .ev-adjust-bar .form-error { margin: 0; min-height: 0; }
 .ev-adjusting .ev-selection, .ev-adjusting #ev-chart-type, .ev-adjusting .ev-chart + .tr-hint { display: none; }
 .ev-adjusting .ev-chart { touch-action: none; }
-@media (max-width: 700px) {
-  .updated-banner { gap: 10px; padding: 6px 12px; }
-  .banner-total { padding-left: 10px; }
-  .updated-banner .banner-total-num { font-size: 20px; }
-  .banner-total-sub { font-size: 10.5px; }
-  .banner-updated .updated-label { display: none; }
-  .updated-banner .banner-updated strong { font-size: 11.5px; font-weight: 700; color: var(--text-2); }
-}
 
 /* ---- Settings: About ---- */
 .about-head { display: flex; align-items: center; gap: 12px; }
@@ -654,7 +629,6 @@ dialog.form-dialog::backdrop { background: var(--backdrop); backdrop-filter: blu
 .fire-days-table td { padding: 3px 8px 3px 0; }
 .fire-days-table tr.sel td { font-weight: 700; }
 .fire-days-table .tfb { color: #e5484d; }
-@media (max-width: 700px) { .legends { display: none; } }
 /* Network boundaries react only on their lines, so clicks inside fall through to the fire districts. */
 .leaflet-pane.leaflet-boundaries-pane > svg path.leaflet-interactive { pointer-events: visibleStroke; }
 /* ---- Map layers panel: grouped sections ---- */
@@ -729,3 +703,158 @@ body[data-role="viewer"] :is(.event-start, .event-stop, #ev-start-btn, #ev-edit,
 :is(.req-actions, .users-table, .users-invite) select, .users-invite input { min-height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--text); font-size: 12.5px; }
 .users-invite { display: grid; grid-template-columns: 1fr 1.4fr auto auto; gap: 8px; }
 @media (max-width: 700px) { .users-invite { grid-template-columns: 1fr 1fr; } }
+
+/* ---- Accent colours (Settings → General) ----
+   Teal is the default in :root above. Each option overrides the accent tokens for dark mode,
+   then for light mode. Kept muted so network colours and alert severities stay the loudest
+   things on screen. */
+:root[data-accent="blue"] { --accent: #7fb4f0; --accent-bg: #1b2d44; --accent-ink: #d3e6fb; --accent-line: #2f5584; --primary-bg: #18304d; --primary-ink: #c4defb; --switch-on: #3a7bc8; }
+:root[data-accent="indigo"] { --accent: #a3a9f4; --accent-bg: #25284a; --accent-ink: #dfe1fc; --accent-line: #464c8f; --primary-bg: #262a52; --primary-ink: #d3d6fb; --switch-on: #5d64c9; }
+:root[data-accent="plum"] { --accent: #d69ad9; --accent-bg: #3a2440; --accent-ink: #f6dcf7; --accent-line: #6d4273; --primary-bg: #3a2140; --primary-ink: #f1d0f3; --switch-on: #9a58a0; }
+:root[data-accent="rose"] { --accent: #e79ab3; --accent-bg: #3d2430; --accent-ink: #fadbe5; --accent-line: #74404f; --primary-bg: #40222f; --primary-ink: #f7d0dc; --switch-on: #a8566f; }
+:root[data-accent="slate"] { --accent: #a9bfcf; --accent-bg: #26333d; --accent-ink: #dde8f0; --accent-line: #4a6070; --primary-bg: #26343f; --primary-ink: #d3e1ec; --switch-on: #5d7a8f; }
+:root[data-theme="light"][data-accent="blue"] { --accent: #2266b0; --accent-bg: #dde9f7; --accent-ink: #174a82; --accent-line: #9dbfe6; --primary-bg: #2266b0; --primary-ink: #ffffff; --switch-on: #2266b0; }
+:root[data-theme="light"][data-accent="indigo"] { --accent: #4f56b8; --accent-bg: #e3e4f7; --accent-ink: #363c8a; --accent-line: #b0b4e8; --primary-bg: #4f56b8; --primary-ink: #ffffff; --switch-on: #4f56b8; }
+:root[data-theme="light"][data-accent="plum"] { --accent: #8a4a8f; --accent-bg: #f1e1f1; --accent-ink: #63306a; --accent-line: #d3aed6; --primary-bg: #8a4a8f; --primary-ink: #ffffff; --switch-on: #8a4a8f; }
+:root[data-theme="light"][data-accent="rose"] { --accent: #a64d6a; --accent-bg: #f6e1e8; --accent-ink: #7a3049; --accent-line: #e0afc0; --primary-bg: #a64d6a; --primary-ink: #ffffff; --switch-on: #a64d6a; }
+:root[data-theme="light"][data-accent="slate"] { --accent: #4a6375; --accent-bg: #e2e9ee; --accent-ink: #31485a; --accent-line: #aebfcb; --primary-bg: #4a6375; --primary-ink: #ffffff; --switch-on: #4a6375; }
+
+.accent-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.accent-option { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 12px 0 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--text-2); font-weight: 600; }
+.accent-option:hover { border-color: var(--line-strong); }
+.accent-option .accent-dot { width: 18px; height: 18px; border-radius: 50%; background: var(--dot); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12); }
+.accent-option.active { border-color: var(--accent); background: var(--accent-bg); color: var(--accent-ink); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
+
+/* ---- Disclaimer (every app open; same text heads Settings → About) ---- */
+dialog.disclaimer { width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 24px 28px 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--text); box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45); overflow-y: auto; }
+dialog.disclaimer::backdrop { background: var(--backdrop); backdrop-filter: blur(3px); }
+.disclaimer-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.disclaimer-head h2 { margin: 0; font-size: 18px; }
+.disclaimer-text { color: var(--text-2); font-size: 13.5px; line-height: 1.55; }
+.disclaimer-text p { margin: 0 0 10px; }
+.disclaimer-text p:last-child { margin-bottom: 0; }
+.disclaimer-text b { color: var(--text); }
+.disclaimer-text ul { display: grid; gap: 5px; margin: 0 0 12px; padding-left: 20px; }
+.disclaimer-meta { margin: 16px 0 0; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+.disclaimer-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
+.disclaimer-actions .btn { min-width: 140px; min-height: 40px; }
+@media (max-width: 700px) { dialog.disclaimer { padding: 18px 16px; } }
+
+/* ---- Phone layout (≤ 700px) ----
+   One vertical page instead of overlays: app bar, map block (expandable), forecast timeline,
+   colour scale, then the alert and outage panels; a tab bar at the bottom and the sidebar as a
+   drawer from "Menu". Trends and Events stay full-screen pages between the two bars. */
+.mobile-tabs, .map-expand { display: none; }
+
+@media (max-width: 700px) {
+  :root {
+    --bar-h: 52px;
+    --phone-top: var(--bar-h);
+    --tabs-h: calc(58px + env(safe-area-inset-bottom));
+    --map-h: 50svh;
+  }
+  body:has(#event-control .event-pill) { --phone-top: calc(var(--bar-h) + 42px); }
+  body.map-expanded { --map-h: calc(100svh - var(--phone-top) - var(--tabs-h)); }
+
+  html, body { height: auto; min-height: 100%; overflow-x: hidden; overflow-y: auto; }
+  body { display: flex; flex-direction: column; padding: var(--phone-top) 0 calc(var(--tabs-h) + 12px); --left-w: 0px; --right-w: 0px; }
+  body.view-page { overflow: hidden; height: 100%; }
+
+  /* App bar: brand mark, totals, live switch, refresh. */
+  .app-brand { top: 0; left: 0; right: 0; width: auto; height: var(--bar-h); padding: 0 10px env(safe-area-inset-right) 10px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; box-shadow: none; background: var(--surface); backdrop-filter: none; }
+  .app-brand .sb-brand, #sb-pin { display: none; }
+  .topbar { position: fixed; z-index: 1120; top: 0; left: 56px; right: 10px; height: var(--bar-h); display: flex; align-items: center; gap: 8px; }
+  .topbar-spacer { display: none; }
+  .updated-banner { flex: 1; min-width: 0; flex-direction: column-reverse; align-items: flex-start; gap: 0; padding: 0; border: 0; background: none; box-shadow: none; text-align: left; }
+  .banner-total { flex-direction: row; align-items: baseline; gap: 5px; max-width: 100%; padding: 0; border: 0; }
+  .updated-banner .banner-total-num { font-size: 20px; }
+  .banner-total-sub { overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; }
+  .banner-updated .updated-label { display: none; }
+  .updated-banner .banner-updated strong { color: var(--muted); font-size: 11px; font-weight: 600; }
+  .topbar-actions { gap: 6px; }
+  .live-switch { padding: 0 9px; }
+  .live-switch #live-label { display: none; }
+  #refresh-button { width: 38px; padding: 0; }
+  #refresh-button span { display: none; }
+  /* Active event: a slim strip under the bar. Starting one is done from the Events tab. */
+  .event-control:empty, .event-start { display: none; }
+  .event-control:has(.event-pill) { position: fixed; top: var(--bar-h); left: 0; right: 0; height: 42px; padding: 0 10px; display: flex; align-items: center; background: var(--surface); border-bottom: 1px solid var(--line); }
+  .event-pill { flex: 1; min-width: 0; border-radius: 8px; }
+  .event-pill-text { flex: 1; min-width: 0; }
+  .event-pill-name { max-width: none; }
+
+  /* Map block. */
+  .map-root { position: relative; inset: auto; order: 1; flex: none; width: 100%; height: var(--map-h); }
+  .leaflet-top.leaflet-left { margin-top: 0; }
+  .leaflet-control-zoom { display: none; }
+  .map-expand { display: grid; place-items: center; width: 38px; height: 38px; margin: 10px 10px 0 0; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text-2); box-shadow: var(--shadow); cursor: pointer; }
+  .map-expand svg { width: 18px; height: 18px; }
+  .map-expanded .map-expand { background: var(--accent-bg); color: var(--accent-ink); border-color: var(--accent-line); }
+  .callout.label { padding: 3px 7px; border-top-width: 3px; }
+  .label-name { font-size: 12.5px; }
+  .label-sub { font-size: 10.5px; }
+  .label-meta { display: none; }
+  #callout-dock { display: none; }
+
+  /* Timeline and colour scale under the map. */
+  .timebar { position: static; order: 2; margin: 10px 12px 0; padding: 6px 10px; gap: 8px; }
+  .legends { position: static; order: 3; align-items: stretch; margin: 8px 12px 0; }
+  .legends .legend { justify-content: space-between; }
+  .legend-bar { flex: 1; width: auto; min-width: 0; }
+  .legend-fire { flex-wrap: wrap; justify-content: flex-start; }
+  .map-expanded :is(.outputs, .legends) { display: none; }
+
+  /* Alerts and outage lists flow down the page. */
+  .outputs { position: static; order: 4; width: auto; margin: 12px 12px 0; gap: 12px; }
+  .window, .window[data-win="intel"], .window[data-win="networks"] { flex: none; max-height: none; backdrop-filter: none; background: var(--surface); }
+  .win-body, .insights { overflow: visible; }
+  .win-head { min-height: 44px; }
+  .net-list { max-height: 50svh; }
+  .insight-x { width: 32px; height: 32px; top: 2px; right: 2px; opacity: 0.8; }
+  .net-toggle { width: 32px; height: 32px; }
+
+  /* Sidebar becomes a drawer opened from the tab bar. */
+  .sidebar { display: none; top: 0; bottom: 0; left: 0; z-index: 1200; width: min(340px, calc(100vw - 40px)); padding-top: env(safe-area-inset-top); border-radius: 0 14px 14px 0; transition: none; }
+  .sb-open .sidebar, .sb-pinned .sidebar { display: flex; width: min(340px, calc(100vw - 40px)); }
+  .sb-scrim { z-index: 1190; background: var(--backdrop); }
+  #sb-toggle { display: none; }
+  .toggles label { min-height: 32px; }
+
+  /* Bottom tab bar. */
+  .mobile-tabs { position: fixed; z-index: 1150; left: 0; right: 0; bottom: 0; height: var(--tabs-h); display: grid; grid-template-columns: repeat(4, 1fr); padding-bottom: env(safe-area-inset-bottom); border-top: 1px solid var(--line); background: var(--surface); }
+  .mobile-tabs button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 0; background: none; color: var(--muted); font-size: 11px; font-weight: 600; }
+  .mobile-tabs svg { width: 22px; height: 22px; }
+  .mobile-tabs button.active { color: var(--accent); }
+  .mobile-tabs button.active svg { padding: 1px 12px; box-sizing: content-box; border-radius: 999px; background: var(--accent-bg); color: var(--accent-ink); }
+  .toast { bottom: calc(var(--tabs-h) + 12px); }
+
+  /* Trends and Events pages. */
+  .trends, .page { padding: var(--phone-top) 0 var(--tabs-h); }
+  .trends-inner, .events-page .trends-inner { padding: 14px 12px 24px; gap: 12px; }
+  .tr-filters { gap: 6px; }
+  .tr-filters .seg { overflow-x: auto; max-width: 100%; scrollbar-width: none; }
+  .tr-tiles, .ev-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .tr-card { padding: 10px 10px 12px; }
+  .tr-card-head { flex-wrap: wrap; gap: 6px; }
+  .tr-card-tools { flex-wrap: wrap; }
+  .tr-chart { height: 280px; min-height: 0; }
+  .tr-hint { display: none; }
+  .ev-head, .ev-title-row { flex-direction: column; align-items: stretch; gap: 10px; }
+  .ev-actions { flex-wrap: wrap; }
+  .ev-adjust-buttons { margin-left: 0; flex-wrap: wrap; }
+
+  .trends, .page { overflow-x: hidden; }
+  .trends-inner, .events-page .trends-inner { grid-template-columns: minmax(0, 1fr); }
+  .trends-inner > *, .tr-card, .tr-filters > * { min-width: 0; max-width: 100%; }
+
+  /* Small map: drop what the numbered rings and the drawer already say. */
+  .cluster-tag { display: none; }
+  .leaflet-control-attribution { max-width: calc(100vw - 20px); overflow: hidden; font-size: 9.5px; white-space: nowrap; text-overflow: ellipsis; }
+  .now-btn { width: 38px; padding: 0; font-size: 0; gap: 0; }
+  .now-btn svg { width: 18px; height: 18px; }
+  .time-label strong, .time-label { font-size: 12.5px; }
+  .toggles label:has(#t-windcallouts) { display: none; }
+
+  /* Settings fills the screen. */
+  dialog.settings { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border: 0; border-radius: 0; }
+}
