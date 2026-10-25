@@ -2,23 +2,27 @@
 
 This runs Grid Alert Victoria 24/7 on a Raspberry Pi 5 at home or in the office.
 Pilot users reach it from anywhere (office, home, phone) at **https://grid-alert.com** and
-sign in with a one-time email code. No router ports are opened.
+sign in with their own account. People request access on the sign-in page; you get an email,
+approve them in the app, and they get an email to set a password. No router ports are opened.
 
 ```
 Pilot users (browser/phone)
-        │  HTTPS + sign-in (Cloudflare Access)
+        │  HTTPS (Cloudflare)
         ▼
 Cloudflare edge ◄──── outbound-only tunnel ──── Raspberry Pi 5
                                                  ├─ grid-alert-tunnel  (cloudflared)
-                                                 └─ grid-alert-app     (Node server + historian)
+                                                 └─ grid-alert-app     (Node server, sign-in, historian)
                                                       └─ ./data/history.sqlite (+ daily backups)
+                                                         history, events, users, sessions
+grid-alert-app ──► Resend (HTTPS API) ──► emails: access requests, approvals, password links
 ```
 
 **Costs:**
 
 - Hardware: about A$200–250 one-off (if you don't already have it).
 - Domain: about A$15–20 a year.
-- Cloudflare Tunnel and Access: free for up to 50 users.
+- Cloudflare Tunnel: free.
+- Resend email: free for up to 3,000 emails a month (100 a day), far more than a pilot needs.
 - Power: about A$15 a year.
 
 **Time:** about 1–1.5 hours end to end, most of it waiting for installs and the first build.
@@ -35,9 +39,10 @@ Cloudflare edge ◄──── outbound-only tunnel ──── Raspberry Pi 5
    - If it is **private**, create a GitHub fine-grained personal access token with *read-only Contents* access to this repository. You will paste it as the password when the Pi clones the repo.
    - A public repo needs nothing.
 3. **Have these ready:**
-   - **The domain `grid-alert.com`** (registered). Step 6a puts it on Cloudflare if it isn't already.
+   - **The domain `grid-alert.com`** (registered). Step 7a puts it on Cloudflare if it isn't already.
    - **A Cloudflare account** (free).
-   - **The email addresses of your pilot users.**
+   - **A Resend account** (free, sign up at resend.com with GitHub or email).
+   - **A strong password** for your own admin account (10+ characters).
 
 ## 1. Hardware
 
@@ -106,7 +111,8 @@ git clone https://github.com/RPBatchelor/grid-alert.git
 cd grid-alert
 
 mkdir -p data           # create the history folder as your user (the app runs as UID 1000)
-cp .env.example .env    # settings; the tunnel token goes in here later
+cp .env.example .env    # settings
+nano .env               # set ADMIN_EMAIL, ADMIN_NAME and ADMIN_PASSWORD (your account), then Ctrl+O, Enter, Ctrl+X
 
 export GIT_COMMIT=$(git rev-parse --short HEAD)
 docker compose up -d --build app    # first build takes ~5–10 minutes on a Pi 5
@@ -120,7 +126,12 @@ curl http://localhost:8080/api/health
 docker compose ps        # grid-alert-app should show "healthy" after ~2 minutes
 ```
 
-From a PC on the same network, open **http://helly:8080** (or `http://helly.local:8080`). You should see the live map.
+From a PC on the same network, open **http://helly:8080** (or `http://helly.local:8080`). You
+should see the Grid Alert sign-in page. Sign in with `ADMIN_EMAIL` and `ADMIN_PASSWORD`, and the
+live map loads.
+
+The log confirms the admin account (`docker compose logs app | grep AUTH`). Once you have signed
+in, you can blank `ADMIN_PASSWORD` in `.env`; it is only used to create the first admin.
 
 ## 5. Bring across the history you already have (optional)
 
@@ -153,52 +164,74 @@ The history recorded on your PC since 25 October can continue on the Pi.
 
 Your existing events and Trends history now show on the Pi.
 
-## 6. Secure public access with Cloudflare
+## 6. Set up email with Resend
 
-Do these in order. The sign-in is created **before** the address goes live, so the app is
-never exposed without it.
+The app sends four kinds of email:
 
-### 6a. Put your domain on Cloudflare
+- access requests (to you)
+- approvals with a set-password link (to the new user)
+- password resets
+- declines (optional)
+
+It sends them from `noreply@grid-alert.com` through Resend.
+
+**Easiest:** do step 7a (put the domain on Cloudflare) first. Resend can then add its DNS records for you.
+
+1. In **resend.com → Domains → Add domain**, enter `grid-alert.com` and choose region **Tokyo (ap-northeast-1)**, the closest to Australia.
+2. Resend lists the DNS records it needs:
+   - an **MX** and a **TXT (SPF)** on the `send` subdomain
+   - a **TXT (DKIM)** at `resend._domainkey`
+3. Add those records:
+   - If Resend offers **Auto configure** with Cloudflare, use it.
+   - Otherwise, in Cloudflare **DNS → Records**, add each one exactly as shown.
+4. Click **Verify DNS records**. It usually turns **Verified** within minutes.
+5. Optionally, add a **DMARC** record so mail is trusted more: TXT, name `_dmarc`, value `v=DMARC1; p=none;`.
+6. Go to **API Keys → Create API key**:
+   - name `helly`
+   - permission **Sending access**
+   - domain `grid-alert.com`
+
+   Copy the key, which starts with `re_`.
+7. On helly:
+
+   ```sh
+   nano .env        # paste after RESEND_API_KEY=   then Ctrl+O, Enter, Ctrl+X
+   docker compose up -d app
+   ```
+
+Until this is done the app still works: emails are written to the log
+(`docker compose logs app | grep MAIL`), and Settings → Users shows each set-password link with
+a **Copy** button so you can send it yourself.
+
+## 7. Public access with Cloudflare Tunnel
+
+The app has its own sign-in, so the tunnel just needs to carry traffic. Every page and data
+request needs a signed-in account; only the sign-in page and `/api/health` are open.
+
+### 7a. Put your domain on Cloudflare
 
 - Bought through Cloudflare: nothing to do.
 - Bought elsewhere: in Cloudflare, add the site (Free plan), then change your registrar's nameservers to the two Cloudflare gives you. This can take up to a few hours.
 
-### 6b. Set up Zero Trust (one-off)
+### 7b. Create the tunnel
 
-1. Open **one.dash.cloudflare.com**.
-2. Choose a team name and the **Free** plan. It may ask for a payment card even on the free plan.
-
-### 6c. Create the sign-in (Access application)
-
-1. Go to **Access → Applications → Add an application → Self-hosted**.
-2. Application name: `Grid Alert Victoria`.
-3. Public hostname: leave **subdomain blank**, domain `grid-alert.com`. (Optionally add a second hostname `www` · `grid-alert.com` so both addresses are protected.)
-4. Session duration: `24 hours`. Choose a shorter one if you prefer.
-5. Add a policy:
-   - Name: `Pilot users`
-   - Action: **Allow**
-   - Include → **Emails** → add each pilot user's email address
-6. Login methods: **One-time PIN**, which is on by default. Users get a code by email. You can add Google or Microsoft sign-in later.
-7. Save.
-
-### 6d. Create the tunnel
-
-1. Go to **Networks → Tunnels → Create a tunnel**.
-2. Choose **Cloudflared**, name it `helly`, and save.
-3. On the install screen choose **Docker**. Copy **only the long token** after `--token` in the command shown. Don't run that command.
-4. On helly:
+1. Open **one.dash.cloudflare.com**. The first time, choose a team name and the **Free** plan; it may ask for a payment card even on the free plan.
+2. Go to **Networks → Tunnels → Create a tunnel**.
+3. Choose **Cloudflared**, name it `helly`, and save.
+4. On the install screen choose **Docker**. Copy **only the long token** after `--token` in the command shown. Don't run that command.
+5. On helly:
 
    ```sh
    nano .env        # paste after TUNNEL_TOKEN=   then Ctrl+O, Enter, Ctrl+X
    ```
 
-5. Back in Cloudflare, on the tunnel's **Public hostnames** tab, add:
+6. Back in Cloudflare, on the tunnel's **Public hostnames** tab, add:
    - Subdomain **blank**, domain `grid-alert.com`
    - If Cloudflare says a DNS record already exists for `grid-alert.com` (e.g. the registrar's parking page), delete that record under the domain's **DNS → Records**, then add the hostname again.
    - Service type **HTTP**, URL **`app:8080`**. `app` is the container's name inside Docker, not `localhost`.
-6. Save.
+7. Save.
 
-### 6e. Start the tunnel
+### 7c. Start the tunnel
 
 ```sh
 docker compose up -d
@@ -207,30 +240,28 @@ docker compose logs tunnel | tail -5     # look for "Registered tunnel connectio
 
 The tunnel's status in the Cloudflare dashboard should show **Healthy**.
 
-## 7. Test it like a user
+## 8. Test it like a user
 
-1. On your phone, **turn off Wi-Fi** and open `https://grid-alert.com`.
-2. Expect Cloudflare's sign-in page. Enter a pilot email, then type the code that arrives by email. The map loads.
-3. Try an email that is **not** on the list. It should be refused.
-4. Start and stop a test event, then check the Pi records who did it:
+1. On your phone, **turn off Wi-Fi** and open `https://grid-alert.com`. Expect the Grid Alert sign-in page.
+2. Sign in as yourself. The map loads.
+3. **Request access** from another email address (a personal one works). Within a minute you should get an "Access request" email.
+4. In the app, open **Settings → Users** (the email's button goes straight there). Approve the request as **Viewer**.
+5. The other address gets an "Access approved" email. Set a password from it, and you're signed in as that user.
+6. As a viewer there is no **Start event** button. Sign out using the button at the foot of the sidebar (expand the sidebar first).
+7. Start and stop a test event as yourself, then check the Pi records who did it:
 
    ```sh
    docker compose logs app | grep AUDIT
    ```
 
-5. Reboot the Pi (`sudo reboot`). After about 2 minutes the site comes back by itself.
+8. Reboot the Pi (`sudo reboot`). After about 2 minutes the site comes back by itself. People who were signed in stay signed in, for up to 14 days.
 
-Once this works you can close the local-network shortcut. Delete the two `ports:` lines in
-`docker-compose.yml`, then run `docker compose up -d`. Afterwards everyone, you included, goes
-through the sign-in.
+## 9. Optional: get an alert if it stops recording
 
-## 8. Optional: get an alert if it stops recording
+Use a free uptime monitor (e.g. UptimeRobot) on the health check. `/api/health` is open
+without signing in; it shows only uptime and the last snapshot time.
 
-Use a free uptime monitor (e.g. UptimeRobot) on the health check. It must be reachable
-without signing in:
-
-1. In Cloudflare **Access → Applications**, add another **Self-hosted** app for `grid-alert.com` with **path** `api/health`. Give it a policy with Action **Bypass** and Include **Everyone**. The health check shows only uptime and the last snapshot time.
-2. In UptimeRobot, add a **Keyword** monitor for `https://grid-alert.com/api/health` with keyword `"ok":true`, checked every 5 minutes, alerting your email.
+1. In UptimeRobot, add a **Keyword** monitor for `https://grid-alert.com/api/health` with keyword `"ok":true`, checked every 5 minutes, alerting your email.
 
 `"ok"` turns false if no snapshot has been recorded for 15 minutes, which catches a stuck
 collector as well as a dead Pi.
@@ -244,7 +275,17 @@ collector as well as a dead Pi.
 | Who changed events | `docker compose logs app \| grep AUDIT` |
 | Update to the latest code | `sh scripts/pi-update.sh` |
 | Restart | `docker compose restart` |
-| Add or remove pilot users | Cloudflare → Access → Applications → the app → Policies |
+| Approve requests, change roles, disable someone | In the app: **Settings → Users** (admins only) |
+| Invite someone directly | **Settings → Users → Invite someone** |
+| Who changed things / emails sent | `docker compose logs app \| grep -E "AUDIT\|MAIL"` |
+
+**Roles:**
+
+- **Viewer:** can see everything (map, Trends, Events, exports).
+- **Operator:** can also start, stop, edit, resume and delete events.
+- **Admin:** can also manage users.
+
+Make at least one other trusted person an admin, so you aren't the only one who can approve access.
 
 **Backups:**
 
@@ -272,7 +313,9 @@ allowed domains at api.windy.com, then enter the key in Settings → Integration
 | `grid-alert-app` shows **unhealthy** | Snapshots have stopped. Check `docker compose logs app` for "Collector fetch failed", and check the Pi's internet. |
 | Tunnel shows **Down** in Cloudflare | Check `docker compose logs tunnel`. Usually a wrong or empty `TUNNEL_TOKEN` in `.env`. Fix it, then `docker compose up -d`. |
 | Cloudflare error 502 or 1033 | The public hostname's service must be `http://app:8080`, not `localhost`. |
-| Sign-in code never arrives | Check spam. The email must be listed in the Access policy exactly. |
+| Emails never arrive | Check spam first. Then run `docker compose logs app \| grep MAIL`: "not sent" means `RESEND_API_KEY` is missing; "Resend HTTP 403" usually means the domain isn't verified yet. Meanwhile, copy links from Settings → Users. |
+| Locked out of your admin account | Use **Forgot password?** on the sign-in page. If email isn't working, the link is in `docker compose logs app \| grep MAIL`. |
+| "Too many attempts" | Sign-in allows 8 tries per email in 15 minutes. Wait, then try again (or restart the app). |
 | Times look wrong | Run `timedatectl` on the Pi and set `Australia/Melbourne` with `sudo timedatectl set-timezone Australia/Melbourne`. |
 | Gaps in Trends | The Pi or the internet was down. Gaps are expected and shown honestly. A UPS reduces them. |
 
@@ -280,5 +323,5 @@ allowed domains at api.windy.com, then enter the key in Settings → Integration
 
 - **Single point of failure.** It depends on one Pi, home or office power, and an internet connection.
 - **Your equipment and accounts.** It runs on hardware and accounts you own, not AusNet IT. Agree this with your manager and Technology before sharing it beyond a small pilot group.
-- **Access is by email list, not AusNet sign-in.** Remove people from the policy when they leave the pilot.
+- **Accounts are local to this app, not AusNet single sign-on.** Disable people in Settings → Users when they leave the pilot. There is no two-factor sign-in, so use strong passwords and keep the user list tidy.
 - **Moving to company hosting later is easy.** The same container runs unchanged on AWS or other company hosting.

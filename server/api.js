@@ -3,6 +3,7 @@ import { exportEventXlsx } from "./exportEvent.js";
 import { getOutages, getWeather } from "./feeds.js";
 import { getFireDanger } from "./fireDanger.js";
 import { getFireRestrictions } from "./fireRestrictions.js";
+import { AuthError, authRoutes, ensureAdmin, purgeExpired, roleAtLeast, sessionUser } from "./auth.js";
 import { backupDatabase, getHistory, getIncidents, historyPath, lastSnapshotTs, recordSnapshot } from "./history.js";
 
 // Fetch outages and store each fresh result in the history database.
@@ -93,11 +94,20 @@ async function readJson(req) {
 // whether anyone has the app open. COLLECT_INTERVAL_MINUTES=0 disables it.
 let collector = null;
 let backupTimer = null;
+let purgeTimer = null;
 const startedAt = Date.now();
 const collectMinutes = () => Number(process.env.COLLECT_INTERVAL_MINUTES ?? 5);
 
 export function startCollector() {
-  if (collector) return;
+  if (collector || purgeTimer) return;
+  try {
+    ensureAdmin();
+    purgeExpired();
+  } catch (error) {
+    console.error("Auth start-up failed:", error.message);
+  }
+  purgeTimer = setInterval(() => purgeExpired(), 60 * 60_000);
+  purgeTimer.unref?.();
   const minutes = collectMinutes();
   if (!(minutes > 0)) return;
   const run = () => outages(minutes * 60000 - 5000).catch((error) => console.error("Collector fetch failed:", error.message));
@@ -123,7 +133,8 @@ export function startCollector() {
 export function stopCollector() {
   clearInterval(collector);
   clearInterval(backupTimer);
-  collector = backupTimer = null;
+  clearInterval(purgeTimer);
+  collector = backupTimer = purgeTimer = null;
 }
 
 // Liveness and freshness, for Docker's health check and external uptime monitoring.
@@ -141,27 +152,37 @@ function health() {
   };
 }
 
+const audit = (user, req, url, result) => console.log(`AUDIT ${new Date().toISOString()} ${user?.email ?? "unknown"} ${req.method} ${url.pathname}${result?.name ? ` "${result.name}"` : ""}`);
+
 // Connect-style middleware: (req, res, next)
+// Everything under /api/ needs a signed-in user except /api/health and the sign-in endpoints
+// (/api/auth/*). Changing events needs the operator role; /api/admin/* needs admin.
 export async function apiMiddleware(req, res, next) {
   const url = new URL(req.url, "http://localhost");
   if (!url.pathname.startsWith("/api/")) return next?.();
-  const matches = ROUTES.map(([method, pattern, handler]) => ({ method, handler, m: url.pathname.match(pattern) })).filter((r) => r.m);
-  if (!matches.length) return next?.();
-  const route = matches.find((r) => r.method === req.method);
-  const send = (status, body) => {
-    res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+  const send = (status, body, headers = {}) => {
+    res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store", ...headers });
     res.end(JSON.stringify(body));
   };
-  if (!route) return send(405, { error: `${req.method} not allowed` });
   try {
+    if (url.pathname.startsWith("/api/auth/") || url.pathname.startsWith("/api/admin/")) {
+      const body = await readJson(req);
+      await authRoutes(req, res, url, body, send);
+      if (url.pathname.startsWith("/api/admin/") && req.method !== "GET") audit(sessionUser(req), req, url, null);
+      return;
+    }
+    const matches = ROUTES.map(([method, pattern, handler]) => ({ method, handler, m: url.pathname.match(pattern) })).filter((r) => r.m);
+    if (!matches.length) return next?.();
+    const route = matches.find((r) => r.method === req.method);
+    if (!route) return send(405, { error: `${req.method} not allowed` });
+    const user = url.pathname === "/api/health" ? null : sessionUser(req);
+    if (url.pathname !== "/api/health") {
+      if (!user) return send(401, { error: "Not signed in." });
+      if (req.method !== "GET" && !roleAtLeast(user, "operator")) return send(403, { error: "Your role can view but not change events. Ask an admin for operator access." });
+    }
     const body = await readJson(req);
     const result = await route.handler(url, body, route.m.slice(1));
-    // Audit trail for changes. Behind Cloudflare Access the signed-in user's email arrives in
-    // this header (set by Cloudflare, not the browser); without Access it is "unknown".
-    if (req.method !== "GET") {
-      const who = req.headers["cf-access-authenticated-user-email"] ?? "unknown";
-      console.log(`AUDIT ${new Date().toISOString()} ${who} ${req.method} ${url.pathname}${result?.name ? ` "${result.name}"` : ""}`);
-    }
+    if (req.method !== "GET") audit(user, req, url, result);
     if (result?.file) {
       const { buffer, filename, type } = result.file;
       res.writeHead(200, {
@@ -174,7 +195,7 @@ export async function apiMiddleware(req, res, next) {
     }
     send(200, result);
   } catch (error) {
-    if (error instanceof HttpError) return send(error.status, { error: error.message });
+    if (error instanceof HttpError || error instanceof AuthError) return send(error.status, { error: error.message });
     console.error(`${req.method} ${url.pathname} failed:`, error);
     send(502, { error: error.message ?? String(error) });
   }

@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b1217" />
+    <meta name="robots" content="noindex" />
+    <title>Sign in · Grid Alert Victoria</title>
+    <script>
+      try {
+        const t = JSON.parse(localStorage.getItem("settings") || "{}").theme || "dark";
+        document.documentElement.dataset.theme = t === "system" ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : t;
+      } catch {}
+    </script>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%23143a31'/%3E%3Cpath d='M13 3 5 14h6l-1 7 8-11h-6l1-7Z' fill='%235bdbb2'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  </head>
+  <body class="login-page">
+    <main class="lp">
+      <section class="lp-intro" aria-labelledby="lp-title">
+        <div class="lp-brand">
+          <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg></div>
+          <div>
+            <div class="brand-name">Grid Alert Victoria</div>
+            <div class="lp-sub">Weather × Outages</div>
+          </div>
+        </div>
+        <h1 id="lp-title">Weather and outage intelligence for major events in Victoria.</h1>
+        <ul class="lp-points">
+          <li><span class="lp-dot" aria-hidden="true"></span><div><b>Live outages</b> from AusNet, Powercor, CitiPower, Jemena and United Energy on one map.</div></li>
+          <li><span class="lp-dot" aria-hidden="true"></span><div><b>Weather and fire danger</b> layers: wind, gusts, rain radar, CFA ratings and Total Fire Bans.</div></li>
+          <li><span class="lp-dot" aria-hidden="true"></span><div><b>Trends and events</b>: history of customers off supply, and event records you can export.</div></li>
+        </ul>
+        <p class="lp-note">Access is by approval. Request an account and you’ll get an email when it’s ready.</p>
+      </section>
+
+      <section class="lp-card" aria-label="Sign in">
+        <!-- Sign in / Request access -->
+        <div id="lp-main">
+          <div class="lp-tabs" role="tablist">
+            <button type="button" role="tab" id="tab-signin" aria-selected="true" aria-controls="form-signin">Sign in</button>
+            <button type="button" role="tab" id="tab-request" aria-selected="false" aria-controls="form-request">Request access</button>
+          </div>
+
+          <form id="form-signin" class="lp-form" role="tabpanel" aria-labelledby="tab-signin" novalidate>
+            <label class="field"><span>Email</span><input name="email" type="email" autocomplete="username" required /></label>
+            <label class="field"><span>Password</span><input name="password" type="password" autocomplete="current-password" required /></label>
+            <p class="form-error" role="alert"></p>
+            <button class="btn primary lp-submit" type="submit">Sign in</button>
+            <button class="link-button lp-link" type="button" id="show-forgot">Forgot password?</button>
+          </form>
+
+          <form id="form-request" class="lp-form" role="tabpanel" aria-labelledby="tab-request" hidden novalidate>
+            <label class="field"><span>Name</span><input name="name" autocomplete="name" maxlength="120" required /></label>
+            <label class="field"><span>Work email</span><input name="email" type="email" autocomplete="email" required /></label>
+            <label class="field"><span>Organisation <small>(optional)</small></span><input name="organisation" autocomplete="organization" maxlength="120" /></label>
+            <label class="field"><span>Why do you need access? <small>(optional)</small></span><textarea name="reason" rows="3" maxlength="1000" placeholder="e.g. Duty manager, Control &amp; Operations"></textarea></label>
+            <p class="form-error" role="alert"></p>
+            <button class="btn primary lp-submit" type="submit">Request access</button>
+          </form>
+        </div>
+
+        <!-- Forgot password -->
+        <form id="form-forgot" class="lp-form" hidden novalidate>
+          <h2>Reset your password</h2>
+          <p class="dialog-sub">Enter your email and we’ll send a link to set a new password.</p>
+          <label class="field"><span>Email</span><input name="email" type="email" autocomplete="username" required /></label>
+          <p class="form-error" role="alert"></p>
+          <button class="btn primary lp-submit" type="submit">Send link</button>
+          <button class="link-button lp-link" type="button" data-back>Back to sign in</button>
+        </form>
+
+        <!-- Set password (from an emailed link) -->
+        <form id="form-setpw" class="lp-form" hidden novalidate>
+          <h2>Set your password</h2>
+          <p class="dialog-sub">Use at least 10 characters. A short phrase is easier to remember than a jumble.</p>
+          <label class="field"><span>New password</span><input name="password" type="password" autocomplete="new-password" minlength="10" required /></label>
+          <label class="field"><span>Confirm password</span><input name="confirm" type="password" autocomplete="new-password" minlength="10" required /></label>
+          <p class="form-error" role="alert"></p>
+          <button class="btn primary lp-submit" type="submit">Set password and sign in</button>
+        </form>
+
+        <!-- Confirmation -->
+        <div id="lp-done" class="lp-done" hidden role="status">
+          <div class="lp-done-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m5 12.5 4.5 4.5L19 7.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg></div>
+          <p id="lp-done-text"></p>
+          <button class="link-button lp-link" type="button" data-back>Back to sign in</button>
+        </div>
+      </section>
+    </main>
+    <footer class="lp-foot">grid-alert.com · Situational awareness tool, not an official source of outage information.</footer>
+    <script type="module" src="/src/login.js"></script>
+  </body>
+</html>

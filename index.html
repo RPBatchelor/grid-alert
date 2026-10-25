@@ -325,6 +325,7 @@
       </div>
 
       <div class="sb-foot">
+        <div class="user-box" id="user-box" hidden></div>
         <button class="sb-item" type="button" id="settings-button" title="Settings"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" stroke="currentColor" stroke-width="1.8" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" stroke="currentColor" stroke-width="1.6" /></svg><span class="sb-label">Settings<small>Appearance, colours, data, integrations</small></span></button>
         <button class="sb-item sb-expand" type="button" id="sb-toggle" title="Expand sidebar" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m10 7 5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /><path d="M4 4v16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg><span class="sb-label">Collapse sidebar</span></button>
       </div>
@@ -387,6 +388,10 @@
           <button type="button" data-section="integrations">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 7V4m6 3V4M7 7h10v4a5 5 0 0 1-10 0V7Zm5 9v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
             Integrations
+          </button>
+          <button type="button" data-section="users" id="settings-nav-users" hidden>
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="9" cy="8" r="3.5" stroke="currentColor" stroke-width="1.8" /><path d="M2.5 20c.6-3.4 3.2-5.5 6.5-5.5s5.9 2.1 6.5 5.5M16 4.8a3.5 3.5 0 0 1 0 6.4M18.5 14.8c1.6.8 2.7 2.6 3 5.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
+            Users <span class="tag users-count" id="users-request-count" hidden></span>
           </button>
           <button type="button" data-section="about">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8" /><path d="M12 11v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /><circle cx="12" cy="8" r="1.1" fill="currentColor" /></svg>
@@ -471,6 +476,36 @@
               <h4>Outage history</h4>
               <p>The server stores a snapshot every few minutes while it runs (set with <code>COLLECT_INTERVAL_MINUTES</code>), shown in the Trends view.</p>
               <div class="status-line" id="history-stats">Loading…</div>
+            </div>
+          </section>
+
+          <section data-panel="users" aria-labelledby="su-title" hidden>
+            <h3 id="su-title">Users</h3>
+            <div class="users-link" id="users-link" hidden role="status"></div>
+            <div class="settings-group">
+              <h4>Access requests</h4>
+              <p>People who asked for access on the sign-in page. Approving emails them a link to set a password.</p>
+              <div class="req-list" id="users-requests"><div class="empty">Loading…</div></div>
+            </div>
+            <div class="settings-group">
+              <h4>People with access</h4>
+              <p><b>Viewer</b> can see everything. <b>Operator</b> can also start, stop and edit events. <b>Admin</b> can also manage users.</p>
+              <div class="users-table-wrap">
+                <table class="users-table" id="users-table">
+                  <thead><tr><th>Person</th><th>Role</th><th>Last sign-in</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="settings-group">
+              <h4>Invite someone</h4>
+              <p>Creates the account straight away and emails a link to set a password.</p>
+              <form class="users-invite" id="users-invite">
+                <input name="name" placeholder="Name" maxlength="120" aria-label="Name" />
+                <input name="email" type="email" placeholder="Email" required aria-label="Email" />
+                <select class="user-invite-role"></select>
+                <button type="submit" class="btn small primary">Invite</button>
+              </form>
             </div>
           </section>
 

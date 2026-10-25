@@ -7,6 +7,7 @@ import { HALO, applyTheme, getSettings, initSettings, loadSettings, resolvedThem
 import { initEvents, refreshActive, refreshEvents, repaintEvents, showEvents, updateStartButton } from "./events.js";
 import { initTrends, loadTrends, refreshTrends } from "./trends.js";
 import { SCALES, WindField } from "./windfield.js";
+import { initUsers, requireUser } from "./users.js";
 
 const L = window.L;
 const $ = (s) => document.querySelector(s);
@@ -913,6 +914,7 @@ function wireControls() {
 }
 
 async function boot() {
+  await requireUser();
   const settings = loadSettings(store);
   setNetworkColors(settings.colors);
   applyTheme();
@@ -1000,6 +1002,7 @@ async function boot() {
       legendBefore = legendHeight();
     },
   });
+  initUsers({ toast });
   setLive(store.get("live", "0") === "1");
   await refresh();
 }

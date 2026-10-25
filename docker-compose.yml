@@ -13,11 +13,18 @@ services:
     environment:
       - TZ=Australia/Melbourne
       - COLLECT_INTERVAL_MINUTES=${COLLECT_INTERVAL_MINUTES:-5}
+      # Sign-in and email (see .env.example and DEPLOY.md steps 4 and 6)
+      - APP_URL=${APP_URL:-https://grid-alert.com}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-}
+      - ADMIN_NAME=${ADMIN_NAME:-}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      - ADMIN_NOTIFY_EMAIL=${ADMIN_NOTIFY_EMAIL:-}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - MAIL_FROM=${MAIL_FROM:-Grid Alert Victoria <noreply@grid-alert.com>}
     volumes:
       - ./data:/data
-    # Local-network access for setup and checks (http://<pi-address>:8080). This bypasses the
-    # Cloudflare sign-in, so remove these two lines once the tunnel is working if others share
-    # your network.
+    # Local-network access for setup and checks (http://helly:8080). The app's own sign-in
+    # still applies; remove these two lines if you only want access through the tunnel.
     ports:
       - "8080:8080"
 
@@ -27,6 +34,6 @@ services:
     restart: unless-stopped
     command: tunnel --no-autoupdate run
     environment:
-      - TUNNEL_TOKEN=${TUNNEL_TOKEN:-}   # from .env (DEPLOY.md step 6)
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN:-}   # from .env (DEPLOY.md step 7b)
     depends_on:
       - app

@@ -18,7 +18,15 @@ npm run build && npm start   # http://localhost:8080 (PORT env var to change)
 Node 22.13+ is required (outage history uses the built-in `node:sqlite`; Node prints a harmless "experimental" warning). The server part is needed because the trackers do not allow
 cross-origin browser requests.
 
-**Pilot deployment (Raspberry Pi 5, Docker, Cloudflare Tunnel with sign-in):** see
+**Sign-in:** the app needs an account. On first start the server creates an admin from
+`ADMIN_EMAIL` / `ADMIN_PASSWORD` (set them before `npm run dev` or `npm start`). Others use
+**Request access** on the landing page (`/login`); admins approve them in Settings → Users as
+Viewer (read only), Operator (can change events) or Admin (manages users), and the person is
+emailed a one-time link to set a password (`server/auth.js`). Mail goes through Resend
+(`RESEND_API_KEY`); without a key, emails are printed to the server log. Passwords are hashed
+with scrypt; sessions are HttpOnly cookies lasting 14 days.
+
+**Pilot deployment (Raspberry Pi 5, Docker, Cloudflare Tunnel):** see
 [DEPLOY.md](DEPLOY.md). The server exposes `/api/health` for monitoring, writes a daily
 history backup to `data/backups/` (keeping 14), logs event changes with the signed-in user's
 email (`AUDIT` lines), and shuts down cleanly on SIGTERM.

@@ -5,6 +5,7 @@ import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { apiMiddleware, startCollector, stopCollector } from "./api.js";
+import { pageGate } from "./auth.js";
 import { close as closeHistory } from "./history.js";
 
 const DIST = fileURLToPath(new URL("../dist/", import.meta.url));
@@ -12,7 +13,9 @@ const PORT = Number(process.env.PORT) || 8080;
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".geojson": "application/geo+json", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon" };
 
 async function serveStatic(req, res) {
-  const path = normalize(decodeURIComponent(new URL(req.url, "http://localhost").pathname)).replace(/^([/\\])+/, "");
+  const gate = pageGate(req, res);
+  if (gate === "done") return;
+  const path = gate === "login" ? "login.html" : normalize(decodeURIComponent(new URL(req.url, "http://localhost").pathname)).replace(/^([/\\])+/, "");
   let file = join(DIST, path);
   if (!file.startsWith(DIST)) return res.writeHead(403).end();
   try {
@@ -22,7 +25,9 @@ async function serveStatic(req, res) {
   }
   try {
     const body = await readFile(file);
-    res.writeHead(200, { "Content-Type": TYPES[extname(file)] ?? "application/octet-stream" });
+    const type = TYPES[extname(file)] ?? "application/octet-stream";
+    // Pages are never cached, so a signed-out browser can't show the app from cache.
+    res.writeHead(200, { "Content-Type": type, ...(type.startsWith("text/html") ? { "Cache-Control": "no-store" } : {}) });
     res.end(body);
   } catch {
     res.writeHead(404).end("Not found");

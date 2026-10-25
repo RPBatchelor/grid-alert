@@ -689,3 +689,43 @@ dialog.form-dialog::backdrop { background: var(--backdrop); backdrop-filter: blu
 .fdp-key.declared { background: rgba(180, 83, 9, 0.35); border: 2px solid #b45309; color: var(--text); }
 .fdp-key.partly { background: rgba(180, 83, 9, 0.16); border: 2px dashed #b45309; color: var(--text); }
 .fdp-key.soon { border: 2px dotted #d97706; color: var(--text); }
+
+/* ---- Signed-in user & roles ---- */
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.user-box { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 6px 9px; }
+.user-box[hidden] { display: none; }
+.user-avatar { display: grid; place-items: center; flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; background: var(--accent-bg); color: var(--accent-ink); font-size: 10px; font-weight: 700; }
+.user-label { flex: 1; min-width: 0; line-height: 1.25; }
+.user-label .user-name { display: block; overflow: hidden; color: var(--text); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.user-label small { display: block; overflow: hidden; color: var(--muted); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar .user-signout { display: none; }
+.sb-open .sidebar .user-signout, .sb-pinned .sidebar .user-signout { display: grid; }
+/* Viewers can't change events; the server enforces this too. */
+body[data-role="viewer"] :is(.event-start, .event-stop, #ev-start-btn, #ev-edit, #ev-stop, #ev-resume, #ev-delete, #ev-adjust) { display: none !important; }
+
+/* Settings → Users */
+.users-count { margin-left: auto; background: var(--accent-bg); color: var(--accent-ink); }
+.users-count[hidden] { display: none; }
+.users-link { display: grid; gap: 8px; margin-bottom: 14px; padding: 10px 12px; border: 1px solid var(--toast-line); border-radius: 10px; background: var(--toast-bg); color: var(--toast-ink); font-size: 12.5px; line-height: 1.45; }
+.users-link[hidden] { display: none; }
+.users-link-row { display: flex; gap: 8px; }
+.users-link-row input { flex: 1; min-width: 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--text); font-size: 12px; }
+.req-list { display: grid; gap: 8px; }
+.req-row { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.req-who { min-width: 0; line-height: 1.45; }
+.req-reason { margin-top: 4px; color: var(--text-2); }
+.req-actions { display: flex; align-items: center; gap: 6px; }
+.muted { color: var(--muted); }
+.muted.small, .req-who .small { font-size: 11.5px; }
+.users-table-wrap { overflow-x: auto; }
+.users-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.users-table th { padding: 6px 8px; border-bottom: 1px solid var(--line); color: var(--muted); font-weight: 600; text-align: left; }
+.users-table td { padding: 8px; border-bottom: 1px solid var(--line-2); vertical-align: middle; line-height: 1.4; }
+.users-table tr.is-disabled td:first-child { opacity: 0.55; }
+.settings-body :is(.users-table, .req-actions, .users-invite) select { min-width: 0; width: auto; }
+.users-table td:nth-child(3) { color: var(--text-2); white-space: nowrap; }
+.user-actions { text-align: right; }
+.user-actions .btn { margin: 2px 0 2px 4px; white-space: nowrap; }
+:is(.req-actions, .users-table, .users-invite) select, .users-invite input { min-height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--text); font-size: 12.5px; }
+.users-invite { display: grid; grid-template-columns: 1fr 1.4fr auto auto; gap: 8px; }
+@media (max-width: 700px) { .users-invite { grid-template-columns: 1fr 1fr; } }
