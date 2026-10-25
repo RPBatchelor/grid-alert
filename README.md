@@ -4,6 +4,8 @@ Full-screen operations map for preparing for and responding to major weather eve
 It overlays weather layers, distributor network boundaries and live outage data from all five
 Victorian distribution networks, and generates callouts automatically.
 
+![Victoria Event Intelligence map view: wind forecast over Victoria with Powercor and AusNet network boundaries, outage cluster rings, strongest-wind callouts for each network, the Map layers sidebar on the left, and automated intelligence and per-network outage summaries on the right](docs/app-screenshot.png)
+
 ## Run
 
 ```bash
