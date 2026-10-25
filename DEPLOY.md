@@ -50,33 +50,35 @@ Cloudflare edge ◄──── outbound-only tunnel ──── Raspberry Pi 5
 | Ethernet cable | Steadier than Wi-Fi for an always-on server |
 | Optional: small UPS or UPS HAT | Avoids gaps in history during short power cuts |
 
-## 2. Install the operating system
+## 2. Check the Pi is ready
 
-1. On your PC, install **Raspberry Pi Imager** (raspberrypi.com/software).
-2. Choose:
-   - **Device:** Raspberry Pi 5
-   - **OS:** *Raspberry Pi OS (other) → Raspberry Pi OS **Lite (64-bit)***
-   - **Storage:** your SSD (in a USB adapter). If you can't, use a microSD card for now.
-3. When asked, **edit settings**:
-   - Hostname: `grid-alert-pi`
-   - Username and password: your choice (written as `<you>` below)
-   - Wireless LAN: only if you can't use Ethernet
-   - Locale: time zone `Australia/Melbourne`
-   - Services tab: **Enable SSH** (password authentication)
-4. Write the image, fit the SSD to the Pi, connect Ethernet and power. Give it about 2 minutes on first boot.
-5. If the Pi doesn't boot from the SSD (e.g. you flashed a microSD instead), you can move to the SSD later with `sudo raspi-config` → *Advanced Options* → *Boot Order*.
-
-## 3. Connect and prepare the Pi
-
-From your PC, in PowerShell or a terminal:
+Your Pi is already set up: hostname **`helly`**, user **`ryan`**, with SSH working. From your PC
+(PowerShell or a terminal):
 
 ```sh
-ssh <you>@grid-alert-pi.local
+ssh ryan@helly
 ```
 
-(If `grid-alert-pi.local` isn't found, use the Pi's IP address from your router's device list.)
+If `helly` isn't found, try `ssh ryan@helly.local`, or use the Pi's IP address from your
+router's device list (e.g. `ssh ryan@192.168.1.50`). The same applies to every `helly` below.
 
-Then, on the Pi:
+Then run these checks on helly:
+
+```sh
+uname -m                                  # aarch64 → 64-bit OS (required)
+findmnt -no SOURCE /                      # /dev/nvme0n1p2 or /dev/sda2 → running from an SSD
+                                          # /dev/mmcblk0p2 → running from the microSD card
+free -h                                   # 4 GB or more is comfortable
+timedatectl | grep "Time zone"            # should show Australia/Melbourne
+```
+
+- **`uname -m` shows `armv7l`:** the OS is 32-bit. Reinstall Raspberry Pi OS Lite **(64-bit)** with Raspberry Pi Imager, keeping hostname `helly` and user `ryan`.
+- **Running from the microSD card:** this works for a trial, but the card will wear out under constant database writes. Move to an SSD before the pilot: copy the system across with Raspberry Pi Imager or `rpi-clone`, then set *Advanced Options → Boot Order* in `sudo raspi-config`.
+- **Wrong time zone:** run `sudo timedatectl set-timezone Australia/Melbourne`.
+
+## 3. Prepare helly
+
+On helly (signed in as `ryan`):
 
 ```sh
 # Update everything
@@ -92,7 +94,7 @@ exit
 ```
 
 ```sh
-ssh <you>@grid-alert-pi.local
+ssh ryan@helly
 docker run --rm hello-world     # should print "Hello from Docker!"
 ```
 
@@ -118,7 +120,7 @@ curl http://localhost:8080/api/health
 docker compose ps        # grid-alert-app should show "healthy" after ~2 minutes
 ```
 
-From a PC on the same network, open **http://grid-alert-pi.local:8080**. You should see the live map.
+From a PC on the same network, open **http://helly:8080** (or `http://helly.local:8080`). You should see the live map.
 
 ## 5. Bring across the history you already have (optional)
 
@@ -130,7 +132,7 @@ The history recorded on your PC since 25 October can continue on the Pi.
    node -e "new (require('node:sqlite').DatabaseSync)('data/history.sqlite').exec(\"VACUUM INTO 'data/history-export.sqlite'\")"
    ```
 
-2. **On the Pi**, stop the app:
+2. **On helly**, stop the app:
 
    ```sh
    cd ~/grid-alert && docker compose stop app
@@ -139,10 +141,10 @@ The history recorded on your PC since 25 October can continue on the Pi.
 3. **On your PC**, copy the file over:
 
    ```powershell
-   scp data/history-export.sqlite <you>@grid-alert-pi.local:~/grid-alert/data/history.sqlite
+   scp data/history-export.sqlite ryan@helly:~/grid-alert/data/history.sqlite
    ```
 
-4. **On the Pi**, remove the new database's leftover files and start again:
+4. **On helly**, remove the new database's leftover files and start again:
 
    ```sh
    rm -f data/history.sqlite-wal data/history.sqlite-shm
@@ -182,9 +184,9 @@ never exposed without it.
 ### 6d. Create the tunnel
 
 1. Go to **Networks → Tunnels → Create a tunnel**.
-2. Choose **Cloudflared**, name it `grid-alert-pi`, and save.
+2. Choose **Cloudflared**, name it `helly`, and save.
 3. On the install screen choose **Docker**. Copy **only the long token** after `--token` in the command shown. Don't run that command.
-4. On the Pi:
+4. On helly:
 
    ```sh
    nano .env        # paste after TUNNEL_TOKEN=   then Ctrl+O, Enter, Ctrl+X
@@ -235,7 +237,7 @@ collector as well as a dead Pi.
 
 ## Day-to-day
 
-| Task | Command (on the Pi, in `~/grid-alert`) |
+| Task | Command (on helly as `ryan`, in `~/grid-alert`) |
 |---|---|
 | Is it healthy? | `docker compose ps` and `curl localhost:8080/api/health` |
 | Live logs | `docker compose logs -f app` |
@@ -246,11 +248,11 @@ collector as well as a dead Pi.
 
 **Backups:**
 
-- **On the Pi:** a copy of the history is written to `data/backups/` every day, and the last 14 are kept.
+- **On helly:** a copy of the history is written to `data/backups/` every day, and the last 14 are kept.
 - **Off the Pi:** these copies sit on the same disk, so copy one off regularly, e.g. weekly from your PC:
 
   ```powershell
-  scp <you>@grid-alert-pi.local:~/grid-alert/data/backups/* D:\backups\grid-alert\
+  scp ryan@helly:~/grid-alert/data/backups/* D:\backups\grid-alert\
   ```
 
 - **To restore:**
