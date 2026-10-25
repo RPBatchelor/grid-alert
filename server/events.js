@@ -185,6 +185,16 @@ export function stopEvent(id, input = {}) {
   return getEvent(id);
 }
 
+// Make a completed event in progress again (clears its end time) so it keeps tracking.
+export function resumeEvent(id) {
+  const r = row(id);
+  if (r.ended_at == null) throw new HttpError(409, "This event is already in progress.");
+  const active = db().prepare("SELECT id, name FROM events WHERE ended_at IS NULL").get();
+  if (active) throw new HttpError(409, `"${active.name}" is in progress. Stop it before resuming another event.`);
+  db().prepare("UPDATE events SET ended_at = NULL, updated_at = ? WHERE id = ?").run(Date.now(), id);
+  return getEvent(id);
+}
+
 export function updateEvent(id, input) {
   const r = row(id);
   const v = clean(input, { partial: true });

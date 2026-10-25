@@ -1,6 +1,8 @@
 import "./style.css";
-import { NETWORKS, buildInsights, buildSamplePoints, clusterIncidents, nowIndex, setNetworkColors, strongestWind } from "./intel.js";
+import { NETWORKS, buildInsights, buildSamplePoints, clusterIncidents, inMultiPolygon, nowIndex, setNetworkColors, strongestWind } from "./intel.js";
 import { BASEMAPS } from "./basemaps.js";
+import { fdpInsights, initFdpLayer, refreshFdp } from "./fdpLayer.js";
+import { fireInsights, initFireLayer, refreshFire } from "./fireLayer.js";
 import { HALO, applyTheme, getSettings, initSettings, loadSettings, resolvedTheme, setSetting } from "./settings.js";
 import { initEvents, refreshActive, refreshEvents, repaintEvents, showEvents, updateStartButton } from "./events.js";
 import { initTrends, loadTrends, refreshTrends } from "./trends.js";
@@ -121,12 +123,31 @@ function activeBasemap() {
   return pick(s.basemap);
 }
 
+// The panel dropdown edits whichever base map is in use: the normal one, or the "weather
+// off" one (Settings → Map layers) while the weather layer is Off.
+function basemapKeyInUse() {
+  return state.variable === "none" && getSettings().basemapNoWeather !== "same" ? "basemapNoWeather" : "basemap";
+}
+
+function syncBasemapSelect() {
+  const select = $("#basemap-select");
+  if (!select) return;
+  const key = basemapKeyInUse();
+  const options = `<option value="auto">Auto (match light/dark)</option>${Object.entries(BASEMAPS).map(([k, b]) => `<option value="${k}">${esc(b.name)}</option>`).join("")}`;
+  if (select.dataset.mode !== key) {
+    select.innerHTML = options;
+    select.dataset.mode = key;
+  }
+  select.value = getSettings()[key];
+  $('label[for="basemap-select"]').textContent = key === "basemapNoWeather" ? "Weather off" : "With weather";
+  select.title = key === "basemapNoWeather" ? "Used while the weather layer is Off (also in Settings → Map layers)" : "";
+}
+
 function applyBasemap() {
   if (state.windy || !state.map) return;
   const key = activeBasemap();
   document.body.dataset.mapTone = BASEMAPS[key].tone;
-  const select = $("#basemap-select");
-  if (select) select.value = getSettings().basemap;
+  syncBasemapSelect();
   if (layers.baseKey === key) return;
   layers.baseKey = key;
   const def = BASEMAPS[key];
@@ -148,6 +169,14 @@ function createPanes(map) {
   map.getPane("radar").style.pointerEvents = "none";
 }
 
+// Height of the lower-right legend stack (weather scale and/or fire danger key).
+function legendHeight() {
+  const el = $("#legends");
+  if (!el || getComputedStyle(el).display === "none") return 0;
+  const h = el.getBoundingClientRect().height;
+  return h > 4 ? h + 10 : 0;
+}
+
 // Screen space not covered by the sidebar, outputs column, top bar and timeline.
 function mapViewport() {
   const outputs = $("#outputs");
@@ -161,7 +190,8 @@ function mapViewport() {
     left: railRight + 10,
     right: outRect && outRect.top < window.innerHeight / 2 ? outRect.left - 10 : window.innerWidth - 10,
     top: narrow ? 130 : 70,
-    bottom: window.innerHeight - (document.body.classList.contains("windy-mode") ? 130 : 84),
+    // Above the timeline, and above the colour legend when it is showing (lower right).
+    bottom: window.innerHeight - (document.body.classList.contains("windy-mode") ? 130 : 84) - legendHeight(),
   };
 }
 
@@ -211,6 +241,8 @@ async function refresh({ force = false } = {}) {
     renderAll();
     if (state.view === "trends") loadTrends();
     if (state.view === "events") refreshEvents();
+    refreshFire();
+    refreshFdp();
     refreshActive();
   } finally {
     button.disabled = false;
@@ -241,11 +273,24 @@ function renderBanner() {
   if (!state.outages) return;
   const nets = Object.entries(state.outages.networks);
   const failed = nets.filter(([, n]) => !n.ok).map(([k]) => NETWORKS[k].name);
-  $("#updated-at").textContent = bannerTime(state.outages.fetchedAt);
+  $("#updated-at").textContent = window.innerWidth <= 700 ? `Updated ${shortTime(state.outages.fetchedAt)}` : bannerTime(state.outages.fetchedAt);
   const banner = $("#updated-banner");
   banner.classList.toggle("degraded", failed.length > 0);
   banner.title = nets.map(([k, n]) => `${NETWORKS[k].name}: ${n.ok ? "OK" : `FAILED (${n.error})`} · tracker time ${n.sourceTime ? shortTime(n.sourceTime) : "n/a"}`).join("\n");
   $(".updated-label").textContent = failed.length ? `Outage information (${failed.join(", ")} unavailable) last updated` : "Outage information last updated";
+
+  // Headline: unplanned customers off supply across the networks selected on the map.
+  const selected = Object.keys(NETWORKS).filter((k) => state.visible.has(k) && state.outages.networks[k]);
+  const total = selected.reduce((s, k) => s + state.outages.networks[k].incidents.filter((i) => i.type === "unplanned").reduce((a, i) => a + i.customers, 0), 0);
+  const sub = $("#banner-total-sub");
+  if (!selected.length) {
+    $("#banner-total").textContent = "—";
+    sub.textContent = "no networks selected";
+  } else {
+    $("#banner-total").textContent = num(total);
+    sub.textContent = selected.length === 1 ? `off supply in ${NETWORKS[selected[0]].name} network` : `off supply across ${selected.length} networks`;
+  }
+  $("#banner-total").closest(".banner-total").title = selected.length ? `Unplanned customers off supply: ${selected.map((k) => NETWORKS[k].name).join(", ")}` : "";
 }
 
 function renderPanels() {
@@ -268,9 +313,12 @@ function renderPanels() {
     el.style.setProperty("--c", meta.color);
     el.innerHTML = `
       <button class="net-head" type="button" aria-expanded="${!collapsed}">
-        <div>
-          <div class="net-title"><span class="swatch"></span>${esc(meta.name)} — ${unplanned.length} unplanned outage${unplanned.length === 1 ? "" : "s"}</div>
-          <div class="net-sub">${num(customers)} customers off supply${delta ? ` <span class="delta ${delta > 0 ? "up" : "down"}">${delta > 0 ? "▲" : "▼"} ${num(Math.abs(delta))}</span>` : ""}${feed.ok ? "" : ' <span class="stale">feed unavailable</span>'}</div>
+        <div class="net-head-main">
+          <div class="net-title-row">
+            <span class="net-title"><span class="swatch"></span>${esc(meta.name)}</span>
+            <span class="net-off"><strong>${num(customers)}</strong> off supply</span>
+          </div>
+          <div class="net-sub">${unplanned.length} unplanned outage${unplanned.length === 1 ? "" : "s"}${delta ? ` <span class="delta ${delta > 0 ? "up" : "down"}">${delta > 0 ? "▲" : "▼"} ${num(Math.abs(delta))} customers</span>` : ""}${feed.ok ? "" : ' <span class="stale">feed unavailable</span>'}</div>
         </div>
         <span class="net-toggle" aria-hidden="true">${collapsed ? "+" : "−"}</span>
       </button>
@@ -467,7 +515,8 @@ const SEVERITY_LABEL = { severe: "Severe", high: "High", warn: "Data", elevated:
 
 function renderInsights() {
   if (!state.outages) return;
-  const list = buildInsights({ outages: state.outages, previous: state.previous, weather: state.weather, samplePoints: state.samplePoints ?? {} });
+  const rank = { severe: 0, high: 1, warn: 2, elevated: 3, info: 4 };
+  const list = [...buildInsights({ outages: state.outages, previous: state.previous, weather: state.weather, samplePoints: state.samplePoints ?? {} }), ...fireInsights(), ...fdpInsights()].sort((a, b) => rank[a.severity] - rank[b.severity]);
   const root = $("#insights");
   $("#insight-count").textContent = `${list.length} active`;
   if (!list.length) {
@@ -475,7 +524,7 @@ function renderInsights() {
     return;
   }
   root.innerHTML = list
-    .map((x, idx) => `<button class="insight sev-${x.severity}" type="button" data-idx="${idx}" style="--c:${NETWORKS[x.network]?.color ?? "#9ab"}">
+    .map((x, idx) => `<button class="insight sev-${x.severity}" type="button" data-idx="${idx}" style="--c:${x.color ?? NETWORKS[x.network]?.color ?? "#9ab"}">
       <span class="sev">${SEVERITY_LABEL[x.severity]}</span>
       <span class="insight-title">${esc(x.title)}</span>
       <span class="insight-detail">${esc(x.detail)}</span></button>`)
@@ -489,6 +538,28 @@ function renderInsights() {
 }
 
 // ---- Boundaries -------------------------------------------------------------------------
+
+// Networks whose (approximate) service area overlaps a polygon, judged from points sampled
+// along the polygon's rings and a grid inside its bounds.
+function networksIn(geometry) {
+  if (!geometry || !state.boundaries) return [];
+  const polys = geometry.type === "Polygon" ? [geometry.coordinates] : geometry.coordinates;
+  const pts = [];
+  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+  for (const poly of polys) {
+    const ring = poly[0];
+    const step = Math.max(1, Math.floor(ring.length / 40));
+    for (let i = 0; i < ring.length; i += step) pts.push(ring[i]);
+    for (const [x, y] of ring) [w, s, e, n] = [Math.min(w, x), Math.min(s, y), Math.max(e, x), Math.max(n, y)];
+  }
+  for (let i = 1; i < 6; i++) for (let j = 1; j < 6; j++) {
+    const p = [w + ((e - w) * i) / 6, s + ((n - s) * j) / 6];
+    if (inMultiPolygon(p[0], p[1], geometry)) pts.push(p);
+  }
+  const hit = new Set();
+  for (const f of state.boundaries.features) if (pts.some(([x, y]) => inMultiPolygon(x, y, f.geometry))) hit.add(f.properties.network);
+  return Object.keys(NETWORKS).filter((k) => hit.has(k)).map((k) => NETWORKS[k].name);
+}
 
 async function loadBoundaries() {
   try {
@@ -587,14 +658,20 @@ function setWindStyle(style) {
 function renderLegend() {
   const el = $("#legend");
   const scale = SCALES[state.variable];
-  if (state.windy || !scale) {
-    el.hidden = true;
-    return;
+  const before = legendHeight();
+  el.hidden = !!state.windy || !scale;
+  if (!el.hidden) {
+    const gradient = scale.stops.map(([v, c], i) => `${c} ${(i / (scale.stops.length - 1)) * 100}%`).join(",");
+    el.innerHTML = `<span class="legend-unit">${scale.unit}</span><div class="legend-bar" style="background:linear-gradient(90deg,${gradient})">${scale.stops.map(([v]) => `<span>${v}</span>`).join("")}</div>`;
   }
-  el.hidden = false;
-  const gradient = scale.stops.map(([v, c], i) => `${c} ${(i / (scale.stops.length - 1)) * 100}%`).join(",");
-  el.innerHTML = `<span class="legend-unit">${scale.unit}</span><div class="legend-bar" style="background:linear-gradient(90deg,${gradient})">${scale.stops.map(([v]) => `<span>${v}</span>`).join("")}</div>`;
+  legendsChanged(before);
 }
+
+// The legend stack sits above the timeline at lower right; re-place callouts when it resizes.
+function legendsChanged(before) {
+  if (Math.abs(legendHeight() - before) > 2 && layers.windCallouts) renderWindCallouts();
+}
+
 
 function setupTimeline() {
   if (!state.weather) return;
@@ -810,11 +887,10 @@ function wireControls() {
     else updateTimeLabel();
   }, 60000);
 
-  initSettings(onSettingChange);
+  initSettings(onSettingChange, () => state.outages);
   const basemapSelect = $("#basemap-select");
-  basemapSelect.innerHTML = `<option value="auto">Auto (match light/dark)</option>${Object.entries(BASEMAPS).map(([k, b]) => `<option value="${k}">${esc(b.name)}</option>`).join("")}`;
-  basemapSelect.value = getSettings().basemap;
-  basemapSelect.addEventListener("change", (e) => setSetting("basemap", e.target.value));
+  basemapSelect.addEventListener("change", (e) => setSetting(basemapKeyInUse(), e.target.value));
+  syncBasemapSelect();
 
   state.map.on("move zoom viewreset", updateLeaders);
   window.addEventListener("resize", () => renderWindCallouts());
@@ -903,6 +979,27 @@ async function boot() {
   setWindStyle(state.windStyle);
   setVariable(state.variable);
   await loadBoundaries();
+  let legendBefore = legendHeight();
+  initFdpLayer({
+    map: state.map,
+    store,
+    onChange: () => renderInsights(),
+    onLegendChange: () => {
+      legendsChanged(legendBefore);
+      legendBefore = legendHeight();
+    },
+    networksIn,
+  });
+  initFireLayer({
+    map: state.map,
+    store,
+    toast,
+    onChange: () => renderInsights(),
+    onLegendChange: () => {
+      legendsChanged(legendBefore);
+      legendBefore = legendHeight();
+    },
+  });
   setLive(store.get("live", "0") === "1");
   await refresh();
 }

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0b1217" />
-    <title>Victoria Event Intelligence</title>
+    <title>Grid Alert Victoria</title>
     <script>
       try {
         const t = JSON.parse(localStorage.getItem("settings") || "{}").theme || "dark";
@@ -26,8 +26,14 @@
       <div class="topbar-spacer"></div>
 
       <div class="updated-banner" id="updated-banner">
-        <span class="updated-label">Outage information last updated</span>
-        <strong id="updated-at">Loading…</strong>
+        <div class="banner-updated">
+          <span class="updated-label">Outage information last updated</span>
+          <strong id="updated-at">Loading…</strong>
+        </div>
+        <div class="banner-total" aria-live="polite">
+          <strong class="banner-total-num" id="banner-total">—</strong>
+          <span class="banner-total-sub" id="banner-total-sub">customers off supply</span>
+        </div>
       </div>
 
       <div class="topbar-actions">
@@ -93,6 +99,7 @@
               </a>
               <button class="btn small" id="ev-edit" type="button">Edit</button>
               <button class="btn small" id="ev-stop" type="button" hidden>■ Stop event</button>
+              <button class="btn small" id="ev-resume" type="button" hidden title="Make this event in progress again so it keeps tracking">▶ Resume event</button>
               <button class="btn small danger" id="ev-delete" type="button">Delete</button>
             </div>
           </div>
@@ -128,6 +135,7 @@
               <div class="ev-adjust-fields">
                 <label>Start <input type="datetime-local" id="ev-adjust-start" /></label>
                 <label id="ev-adjust-end-field">End <input type="datetime-local" id="ev-adjust-end" /></label>
+                <label class="ev-ongoing" id="ev-adjust-ongoing-field"><input type="checkbox" id="ev-adjust-ongoing" /> Still in progress (no end time)</label>
                 <div class="ev-adjust-buttons">
                   <button type="button" class="link-button" id="ev-adjust-reset">Back to saved times</button>
                   <button type="button" class="btn small" id="ev-adjust-cancel">Cancel</button>
@@ -231,12 +239,12 @@
 
     <div id="callout-dock" aria-label="Strongest wind callouts"><svg id="callout-leaders" aria-hidden="true"></svg></div>
 
-    <header class="app-brand" aria-label="Victoria Event Intelligence">
+    <header class="app-brand" aria-label="Grid Alert Victoria">
       <div class="brand-mark" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg>
       </div>
       <div class="sb-brand">
-        <div class="brand-name">Victoria Event Intelligence</div>
+        <div class="brand-name">Grid Alert Victoria</div>
         <div class="brand-sub">Weather × Outages</div>
       </div>
       <button class="sb-icon-btn" id="sb-pin" type="button" aria-pressed="false" title="Pin sidebar open"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 4h6l-1 6 3 3H7l3-3-1-6Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /><path d="M12 13v7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /></svg></button>
@@ -255,36 +263,62 @@
           <div class="sb-heading sb-label">Map</div>
           <button class="sb-item" type="button" id="sb-layers-btn" title="Map layers"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /><path d="m3 12 9 5 9-5M3 16l9 5 9-5" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /></svg><span class="sb-label">Map layers<small>Weather, base map and overlays</small></span></button>
           <div class="sb-panel sb-label" id="sb-layers">
-            <div class="sb-panel-head"><span>Weather layer</span><span class="tag" id="weather-source">Open-Meteo</span></div>
-            <div class="seg" id="weather-layers" role="radiogroup" aria-label="Weather overlay">
-              <button type="button" data-layer="speed" class="active">Wind</button>
-              <button type="button" data-layer="gust">Gusts</button>
-              <button type="button" data-layer="rain">Rain</button>
-              <button type="button" data-layer="temp">Temp</button>
-              <button type="button" data-layer="none">Off</button>
-            </div>
-            <div class="basemap-row" id="basemap-row">
-              <label for="basemap-select">Base map</label>
-              <select id="basemap-select"></select>
-            </div>
-            <div class="wind-style" id="wind-style-row">
-              <span>Wind display</span>
-              <div class="seg small" id="wind-style" role="radiogroup" aria-label="Wind display">
-                <button type="button" data-style="arrows">Arrows</button>
-                <button type="button" data-style="animated">Animated</button>
-                <button type="button" data-style="none">Hidden</button>
+            <section class="layer-section" aria-labelledby="ls-weather">
+              <div class="sb-panel-head"><span id="ls-weather">Weather</span><span class="tag" id="weather-source">Open-Meteo</span></div>
+              <div class="seg" id="weather-layers" role="radiogroup" aria-label="Weather overlay">
+                <button type="button" data-layer="speed" class="active">Wind</button>
+                <button type="button" data-layer="gust">Gusts</button>
+                <button type="button" data-layer="rain">Rain</button>
+                <button type="button" data-layer="temp">Temp</button>
+                <button type="button" data-layer="none">Off</button>
               </div>
-            </div>
-            <div class="toggles">
-              <label><input type="checkbox" id="t-radar" /> Rain radar (observed)</label>
-              <label><input type="checkbox" id="t-boundaries" checked /> Network boundaries</label>
-              <label><input type="checkbox" id="t-clusters" checked /> Outage clusters</label>
-              <label><input type="checkbox" id="t-areas" checked /> Outage areas (zoom in)</label>
-              <label><input type="checkbox" id="t-windcallouts" checked /> Strongest-wind callout boxes</label>
-              <label><input type="checkbox" id="t-labels" checked /> Network summary labels</label>
-              <label><input type="checkbox" id="t-planned" /> Include planned outages</label>
-            </div>
-            <div class="net-filter" id="net-filter"></div>
+              <div class="wind-style" id="wind-style-row">
+                <span>Wind display</span>
+                <div class="seg small" id="wind-style" role="radiogroup" aria-label="Wind display">
+                  <button type="button" data-style="arrows">Arrows</button>
+                  <button type="button" data-style="animated">Animated</button>
+                  <button type="button" data-style="none">Hidden</button>
+                </div>
+              </div>
+              <div class="toggles">
+                <label><input type="checkbox" id="t-radar" /> Rain radar (observed) <span class="src-note">RainViewer</span></label>
+                <label><input type="checkbox" id="t-windcallouts" checked /> Strongest-wind callout boxes</label>
+              </div>
+            </section>
+
+            <section class="layer-section" aria-labelledby="ls-fire">
+              <div class="sb-panel-head"><span id="ls-fire">Fire danger</span><span class="tag">CFA</span></div>
+              <div class="toggles">
+                <label><input type="checkbox" id="t-fire" /> Fire danger ratings &amp; Total Fire Bans</label>
+              </div>
+              <div class="seg small fire-days" id="fire-days" role="radiogroup" aria-label="Fire danger forecast day" hidden></div>
+              <div class="fire-status" id="fire-status" aria-live="polite"></div>
+              <div class="toggles">
+                <label><input type="checkbox" id="t-fdp" /> Fire Danger Period (fire restrictions)</label>
+              </div>
+              <div class="fire-status" id="fdp-status" aria-live="polite"></div>
+            </section>
+
+            <section class="layer-section" aria-labelledby="ls-networks">
+              <div class="sb-panel-head"><span id="ls-networks">Networks</span><span class="tag">Outage trackers</span></div>
+              <div class="net-filter" id="net-filter" aria-label="Networks shown"></div>
+              <div class="toggles">
+                <label><input type="checkbox" id="t-boundaries" checked /> Network boundaries</label>
+                <label><input type="checkbox" id="t-labels" checked /> Network summary labels</label>
+                <label><input type="checkbox" id="t-clusters" checked /> Outage clusters</label>
+                <label><input type="checkbox" id="t-areas" checked /> Outage areas (zoom in)</label>
+                <label><input type="checkbox" id="t-planned" /> Include planned outages</label>
+              </div>
+            </section>
+
+            <section class="layer-section" aria-labelledby="ls-base">
+              <div class="sb-panel-head"><span id="ls-base">Base map</span></div>
+              <div class="basemap-row" id="basemap-row">
+                <label for="basemap-select">Base map</label>
+                <select id="basemap-select"></select>
+              </div>
+            </section>
+
             <button class="link-button" id="reset-callouts" type="button">Reset view &amp; callouts</button>
           </div>
         </div>
@@ -328,7 +362,11 @@
       <div class="time-label" id="time-label">—</div>
     </div>
 
-    <div class="legend" id="legend"></div>
+    <div class="legends" id="legends">
+      <div class="legend legend-fire legend-fdp" id="legend-fdp" hidden></div>
+      <div class="legend legend-fire" id="legend-fire" hidden></div>
+      <div class="legend" id="legend"></div>
+    </div>
 
     <dialog id="settings" class="settings" aria-labelledby="settings-title">
       <div class="settings-shell">
@@ -349,6 +387,10 @@
           <button type="button" data-section="integrations">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 7V4m6 3V4M7 7h10v4a5 5 0 0 1-10 0V7Zm5 9v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
             Integrations
+          </button>
+          <button type="button" data-section="about">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8" /><path d="M12 11v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /><circle cx="12" cy="8" r="1.1" fill="currentColor" /></svg>
+            About
           </button>
         </nav>
 
@@ -432,6 +474,68 @@
             </div>
           </section>
 
+          <section data-panel="about" aria-labelledby="sa-title" hidden>
+            <h3 id="sa-title">About</h3>
+            <div class="settings-group about-app">
+              <div class="about-head">
+                <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg></div>
+                <div>
+                  <div class="about-name">Grid Alert Victoria</div>
+                  <div class="setting-help">Weather and outage intelligence for preparing for and responding to major events in Victoria.</div>
+                </div>
+              </div>
+              <dl class="about-facts">
+                <dt>Author</dt><dd>Ryan Batchelor</dd>
+                <dt>Version</dt><dd id="about-version">—</dd>
+                <dt>Website</dt><dd><a href="https://grid-alert.com" target="_blank" rel="noopener noreferrer">grid-alert.com</a></dd>
+                <dt>Source code</dt><dd><a href="https://github.com/RPBatchelor/grid-alert" target="_blank" rel="noopener noreferrer">github.com/RPBatchelor/grid-alert</a></dd>
+              </dl>
+            </div>
+            <div class="settings-group">
+              <h4>Outage data</h4>
+              <p>Read from each distributor's public outage tracker via the app's server. These are undocumented public feeds and may change without notice. Dots show the most recent fetch.</p>
+              <ul class="source-list">
+                <li><div class="src-name"><span class="src-status" data-feed="ausnet"></span>AusNet — Outage Tracker</div><div class="src-purpose">Live AusNet planned and unplanned outages</div><div class="src-links"><a href="https://www.outagetracker.com.au/" target="_blank" rel="noopener noreferrer">outagetracker.com.au</a> · <a href="https://outagetrackerservice.ausnetservices.com.au/api/v1/outages/combinedoutage" target="_blank" rel="noopener noreferrer">feed</a></div></li>
+                <li><div class="src-name"><span class="src-status" data-feed="powercor"></span>Powercor &amp; CitiPower — Live outage map</div><div class="src-purpose">Live outages for both networks (one shared feed)</div><div class="src-links"><a href="https://www.powercor.com.au/outages/live-outage-map" target="_blank" rel="noopener noreferrer">powercor.com.au</a> · <a href="https://s3-ap-southeast-2.amazonaws.com/cppc-outage/outages.json" target="_blank" rel="noopener noreferrer">feed</a></div></li>
+                <li><div class="src-name"><span class="src-status" data-feed="jemena"></span>Jemena — Electricity outages</div><div class="src-purpose">Live Jemena outages</div><div class="src-links"><a href="https://www.jemena.com.au/outages/electricity-outages/" target="_blank" rel="noopener noreferrer">jemena.com.au</a> · <a href="https://poweroutages.jemena.com.au/data/all-outages.json" target="_blank" rel="noopener noreferrer">feed</a></div></li>
+                <li><div class="src-name"><span class="src-status" data-feed="ue"></span>United Energy — Outage map</div><div class="src-purpose">Live United Energy outages</div><div class="src-links"><a href="https://www.unitedenergy.com.au/outage-map/" target="_blank" rel="noopener noreferrer">unitedenergy.com.au</a> · <a href="https://ds5ykmduea4ri.cloudfront.net/outages-v2.json" target="_blank" rel="noopener noreferrer">feed</a></div></li>
+              </ul>
+            </div>
+            <div class="settings-group">
+              <h4>Weather</h4>
+              <ul class="source-list">
+                <li><div class="src-name">Open-Meteo</div><div class="src-purpose">Forecast grid: wind, gusts, rain, temperature (CC BY 4.0)</div><div class="src-links"><a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">open-meteo.com</a></div></li>
+                <li><div class="src-name">RainViewer</div><div class="src-purpose">Observed rain radar overlay</div><div class="src-links"><a href="https://www.rainviewer.com/" target="_blank" rel="noopener noreferrer">rainviewer.com</a></div></li>
+                <li><div class="src-name">Windy Map Forecast API (optional)</div><div class="src-purpose">Alternative weather base map when a key is configured</div><div class="src-links"><a href="https://api.windy.com/" target="_blank" rel="noopener noreferrer">api.windy.com</a></div></li>
+              </ul>
+            </div>
+            <div class="settings-group">
+              <h4>Fire danger</h4>
+              <ul class="source-list">
+                <li><div class="src-name">CFA — Total Fire Bans &amp; Fire Danger Ratings forecast</div><div class="src-purpose">Rating and Total Fire Ban status per fire district, today + 4 days (BoM forecast)</div><div class="src-links"><a href="https://www.cfa.vic.gov.au/warnings-and-restrictions/fire-bans-ratings-and-restrictions/total-fire-bans-fire-danger-ratings/total-fire-bans-fire-danger-ratings" target="_blank" rel="noopener noreferrer">cfa.vic.gov.au</a> · <a href="https://www.cfa.vic.gov.au/cfa/rssfeed/tfbfdrforecast_rss.xml" target="_blank" rel="noopener noreferrer">RSS feed</a></div></li>
+                <li><div class="src-name">CFA — Fire restriction dates (Fire Danger Period)</div><div class="src-purpose">Declaration start/end dates per municipality (read from the CFA web page; no feed is published)</div><div class="src-links"><a href="https://www.cfa.vic.gov.au/warnings-and-restrictions/fire-danger-period/fire-restriction-dates" target="_blank" rel="noopener noreferrer">cfa.vic.gov.au</a></div></li>
+                <li><div class="src-name">Vicmap Lite — Local Government Areas</div><div class="src-purpose">Council boundaries for the Fire Danger Period layer (DataVic open WFS, CC BY), simplified</div><div class="src-links"><a href="https://discover.data.vic.gov.au/" target="_blank" rel="noopener noreferrer">DataVic</a></div></li>
+                <li><div class="src-name">Vicmap Admin — CFA Total Fire Ban District polygons</div><div class="src-purpose">Fire district boundaries (DataVic open WFS, CC BY), simplified for display</div><div class="src-links"><a href="https://discover.data.vic.gov.au/dataset/vicmap-admin-country-fire-authority-cfa-total-fire-ban-district-polygon" target="_blank" rel="noopener noreferrer">DataVic</a></div></li>
+              </ul>
+            </div>
+            <div class="settings-group">
+              <h4>Maps and boundaries</h4>
+              <ul class="source-list">
+                <li><div class="src-name">Esri basemaps</div><div class="src-purpose">Grey, streets, topographic and satellite base maps</div><div class="src-links"><a href="https://www.esri.com/en-us/arcgis/products/arcgis-online/features/basemaps" target="_blank" rel="noopener noreferrer">ArcGIS basemaps</a></div></li>
+                <li><div class="src-name">OpenStreetMap</div><div class="src-purpose">Street base map (© OpenStreetMap contributors, ODbL)</div><div class="src-links"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">openstreetmap.org</a></div></li>
+                <li><div class="src-name">ABS ASGS 2021 — Suburbs &amp; Localities</div><div class="src-purpose">Polygons used to build approximate network boundaries (CC BY 4.0)</div><div class="src-links"><a href="https://www.abs.gov.au/statistics/standards/australian-statistical-geography-standard-asgs-edition-3" target="_blank" rel="noopener noreferrer">abs.gov.au</a></div></li>
+                <li><div class="src-name">Distributor network locator</div><div class="src-purpose">Suburb → distributor lookup used for the boundaries</div><div class="src-links"><a href="https://ds5ykmduea4ri.cloudfront.net/network-locator.json" target="_blank" rel="noopener noreferrer">lookup</a></div></li>
+              </ul>
+            </div>
+            <div class="settings-group">
+              <h4>Open-source software</h4>
+              <p><a href="https://leafletjs.com/" target="_blank" rel="noopener noreferrer">Leaflet</a>, <a href="https://www.chartjs.org/" target="_blank" rel="noopener noreferrer">Chart.js</a>, <a href="https://github.com/chartjs/chartjs-plugin-zoom" target="_blank" rel="noopener noreferrer">chartjs-plugin-zoom</a>, <a href="https://github.com/exceljs/exceljs" target="_blank" rel="noopener noreferrer">ExcelJS</a>, <a href="https://turfjs.org/" target="_blank" rel="noopener noreferrer">Turf</a>, <a href="https://github.com/topojson" target="_blank" rel="noopener noreferrer">TopoJSON</a>, <a href="https://vite.dev/" target="_blank" rel="noopener noreferrer">Vite</a>, <a href="https://nodejs.org/" target="_blank" rel="noopener noreferrer">Node.js (incl. node:sqlite)</a>, <a href="https://rsms.me/inter/" target="_blank" rel="noopener noreferrer">Inter font</a>.</p>
+            </div>
+            <div class="settings-group">
+              <h4>Disclaimer</h4>
+              <p>Decision support only, not a source of truth. Outage data comes from public trackers and may be delayed or incomplete; weather values are model forecasts, not observations or Bureau of Meteorology warnings; network boundaries are approximate. Always confirm with network control systems and official warnings.</p>
+            </div>
+          </section>
           <section data-panel="integrations" aria-labelledby="si-title" hidden>
             <h3 id="si-title">Integrations</h3>
             <div class="settings-group">

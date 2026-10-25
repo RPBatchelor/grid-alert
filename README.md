@@ -1,10 +1,10 @@
-# Victoria Event Intelligence
+# Grid Alert Victoria
 
 Full-screen operations map for preparing for and responding to major weather events in Victoria.
 It overlays weather layers, distributor network boundaries and live outage data from all five
 Victorian distribution networks, and generates callouts automatically.
 
-![Victoria Event Intelligence map view: wind forecast over Victoria with Powercor and AusNet network boundaries, outage cluster rings, strongest-wind callouts for each network, the Map layers sidebar on the left, and automated intelligence and per-network outage summaries on the right](docs/app-screenshot.png)
+![Grid Alert Victoria map view: wind forecast over Victoria with Powercor and AusNet network boundaries, outage cluster rings, strongest-wind callouts for each network, the Map layers sidebar on the left, and automated intelligence and per-network outage summaries on the right](docs/app-screenshot.png)
 
 ## Run
 
@@ -18,13 +18,82 @@ npm run build && npm start   # http://localhost:8080 (PORT env var to change)
 Node 22.13+ is required (outage history uses the built-in `node:sqlite`; Node prints a harmless "experimental" warning). The server part is needed because the trackers do not allow
 cross-origin browser requests.
 
+**Pilot deployment (Raspberry Pi 5, Docker, Cloudflare Tunnel with sign-in):** see
+[DEPLOY.md](DEPLOY.md). The server exposes `/api/health` for monitoring, writes a daily
+history backup to `data/backups/` (keeping 14), logs event changes with the signed-in user's
+email (`AUDIT` lines), and shuts down cleanly on SIGTERM.
+
+## Fire danger ratings (CFA)
+
+The Map layers sidebar has a **Hazards** section with **Fire danger ratings & Total Fire Bans
+(CFA)**. It shows Victoria's 9 CFA fire districts:
+
+- **Shading:** each district is filled in its official Fire Danger Rating colour (No rating,
+  Moderate, High, Extreme, Catastrophic) for the selected day.
+- **Day selector:** Today, Tomorrow and the next three days. A day name shows in red when a
+  Total Fire Ban is declared anywhere that day.
+- **Total Fire Bans:** districts under a ban get a dashed red outline and a "TOTAL FIRE BAN"
+  badge.
+- **District details:** click a district for its 5-day outlook and the BoM issue time.
+- **Legend:** the rating key appears at lower right.
+- **Alerts:** Automated intelligence raises Total Fire Ban, Catastrophic, Extreme and High
+  ratings for the next three days, even when the layer is hidden.
+
+Sources:
+
+- **Ratings and bans:** CFA's public forecast RSS (`/api/fire-danger`, cached for 15 minutes,
+  with the last good copy kept if CFA is unavailable).
+- **Boundaries:** Vicmap Admin's CFA Total Fire Ban District polygons from DataVic's open WFS.
+  These are simplified into `public/data/fire-districts.geojson` (about 96 KB) by
+  `npm run build:fire-districts`.
+
+### Fire Danger Period (fire restrictions)
+
+**Fire Danger Period (fire restrictions)** in the Fire danger section shows CFA's declarations
+by council area. When an area is declared, networks have stricter bushfire-mitigation
+obligations.
+
+- **Declared:** solid fill and "Declared since…" label. **Partly declared:** dashed outline
+  and lighter fill (split councils where only some parts are declared). **Starts within
+  21 days:** dotted outline and "Starts…" label. **Other councils:** a faint outline.
+- **Council details:** click a council to see each part's status and dates, CFA's map PDF,
+  and the networks in the area.
+- **Alerts:**
+  - which areas are declared, and which networks they affect
+  - areas starting within 21 days, grouped by start date (Elevated within 7 days)
+  - CFA rows that look wrong, such as a start date after the end date
+
+  These run even when the layer is hidden.
+
+Sources:
+
+- **Declarations:** CFA publishes no feed, so the server reads the "Fire restriction dates"
+  page table (`/api/fire-restrictions`, cached for 1 hour, with the last good copy kept if
+  CFA is unavailable). The reader was tested against last season's archived pages.
+- **Boundaries:** Vicmap Lite council areas (DataVic WFS), simplified into
+  `public/data/fdp-areas.geojson` (about 126 KB) by `npm run build:fdp-areas`.
+
+Limitations:
+
+- CFA splits some councils into parts (e.g. Ararat North/South). Those part boundaries are
+  only in CFA's PDF maps, so parts are shown on the whole council area, as "partly declared"
+  when they differ.
+- If CFA changes the page layout, the reader reports an error rather than showing wrong data.
+- Network matching is approximate, because the network boundaries are approximate.
+
+Other hazard or region layers (for example flood warning areas, SES regions or VicEmergency
+incidents) can be added the same way: a build script for the polygons, a server adapter for the
+live status, and a module like `src/fireLayer.js`.
+
 ## Layout
 
 - **Title block (top left).** Always shown in full, with the pin button for the sidebar.
 - **Left sidebar (below the title).** By default it's a narrow icon rail. Clicking an icon opens it over the map
   with full labels, and the pin button keeps it open beside the map (remembered). It holds:
   - the pages, **Map** and **Trends**
-  - **Map layers**: weather layer, base map, wind display, overlays and network filters
+  - **Map layers**, grouped into Weather (Open-Meteo, plus RainViewer radar and wind
+    callouts), Fire danger (CFA), Networks (network on/off, boundaries, labels, outage
+    clusters, outage areas and planned outages) and Base map
   - **Settings**
 - **Right column (map page).** Two collapsible windows (state remembered):
   - **Automated intelligence**: alerts and warnings
@@ -82,7 +151,8 @@ browser.
   view opens by default.
 - **Map layers**: base map (Auto, Light grey, Dark grey, Streets, Topographic, Satellite or
   OpenStreetMap, shown as preview cards; also selectable from the map's layer panel) and the
-  base map to use while the weather layer is Off (default: Light grey). Then network colours, with a picker and a hex field per network plus reset. The
+  base map to use while the weather layer is Off (default: Light grey). The base map dropdown on the map edits whichever of the two is
+  currently in use; its label shows "With weather" or "Weather off". Then network colours, with a picker and a hex field per network plus reset. The
   defaults are AusNet `#ffcb08`, Powercor `#87be53`, CitiPower `#5ccfeb`, Jemena `#ba93fb` and
   UE `#84ffb7`, chosen by measurement against every map condition (see below) Also here: a boundary outline (a contrasting edge so very dark or light colours
   stay visible), boundary fill strength and weather layer opacity. Low-contrast choices are
@@ -125,6 +195,9 @@ the outage history so it can be reviewed and analysed afterwards.
   event can be in progress at a time.
 - **Stop.** Use **Stop** in the top bar or on the event page. You can adjust the end time and
   add closing notes.
+- **Resume.** A completed event can be made in progress again with **Resume event** on its
+  page, or with "Still in progress (no end time)" in **Adjust times**. Its end time is cleared
+  and it keeps tracking until stopped. This isn't possible while another event is in progress.
 - **Events page** (sidebar). Lists all events, newest first. Search names and notes, and
   filter by category, status (in progress or completed) and date range.
 - **Event detail.**

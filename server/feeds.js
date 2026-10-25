@@ -5,7 +5,7 @@
 // Incident: { id, network, type: "unplanned"|"planned", lat, lon, place, customers,
 //             status, cause, start, etr, updated, geometry? }
 
-const UA = "Mozilla/5.0 (VicEventIntel; control-room situational awareness)";
+const UA = "Mozilla/5.0 (GridAlertVic/0.2; +https://grid-alert.com; control-room situational awareness)";
 const TIMEOUT_MS = 15000;
 
 export const SOURCES = {

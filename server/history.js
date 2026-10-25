@@ -4,7 +4,7 @@
 // incident register (first/last seen, peak customers). A background collector keeps
 // snapshots coming while the server runs, even when nobody has the app open.
 import { DatabaseSync } from "node:sqlite";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -58,6 +58,32 @@ export function open() {
     );
   `);
   return db;
+}
+
+// ---- Operations: health, backup, shutdown -------------------------------------------------
+
+export function lastSnapshotTs() {
+  return open().prepare("SELECT MAX(ts) AS ts FROM snapshots").get().ts ?? null;
+}
+
+// Consistent copy of the live database (safe while the server is writing), keeping `keep`
+// daily files in <data>/backups.
+const BACKUP_DIR = resolve(dirname(DB_PATH), "backups");
+export function backupDatabase({ keep = 14 } = {}) {
+  mkdirSync(BACKUP_DIR, { recursive: true });
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Melbourne" }).format(new Date());
+  const target = resolve(BACKUP_DIR, `history-${day}.sqlite`);
+  if (existsSync(target)) return null; // already backed up today
+  open().exec(`VACUUM INTO '${target.replace(/'/g, "''")}'`);
+  const old = readdirSync(BACKUP_DIR).filter((f) => /^history-\d{4}-\d{2}-\d{2}\.sqlite$/.test(f)).sort().slice(0, -keep);
+  for (const f of old) rmSync(resolve(BACKUP_DIR, f));
+  return target;
+}
+
+export function close() {
+  if (!db) return;
+  db.close(); // checkpoints the WAL into the main file
+  db = null;
 }
 
 let lastRecorded = 0;

@@ -309,6 +309,7 @@ function renderDetail({ keepZoom }) {
   $("#ev-notes").textContent = e.notes;
   $("#ev-notes").hidden = !e.notes;
   $("#ev-stop").hidden = !e.active;
+  $("#ev-resume").hidden = e.active;
   $("#ev-export").href = `/api/events/${e.id}/export.xlsx`;
   $("#ev-export").title = e.active ? "Download outage data recorded so far (event still in progress)" : "Download the event's outage data as an Excel workbook";
 
@@ -383,27 +384,30 @@ function renderChart({ keepZoom }) {
 
 const HANDLE_HIT_PX = 10;
 
-async function startAdjust({ keep = false } = {}) {
+async function startAdjust({ keep = false, ongoing = false } = {}) {
   const e = ev.detail;
   if (!e) return;
   const kept = keep && ev.adjust ? { start: ev.adjust.start, end: ev.adjust.end } : null;
+  if (keep && ev.adjust && arguments[0]?.ongoing === undefined) ongoing = ev.adjust.ongoing;
   const end = e.endedAt ?? Date.now();
   const span = Math.max(end - e.startedAt, 3600e3);
   const pad = Math.min(Math.max(span * 0.5, 3 * 3600e3), 24 * 3600e3);
   const from = e.startedAt - pad;
-  const to = e.active ? Date.now() : Math.min(Date.now(), end + pad);
+  const to = e.active || ongoing ? Date.now() : Math.min(Date.now(), end + pad);
   const bucket = NICE_BUCKETS.find((b) => b >= (to - from) / POINTS_TARGET) ?? NICE_BUCKETS.at(-1);
   const o = ev.chartOpts;
   const params = new URLSearchParams({ from: String(from), to: String(to), bucket: String(bucket), networks: [...o.nets].join(","), types: [...o.types].join(","), metric: o.metric });
   $("#events").classList.add("loading");
   try {
     const data = await api("GET", `/api/history?${params}`);
-    ev.adjust = { start: kept?.start ?? e.startedAt, end: kept?.end ?? end, savedStart: e.startedAt, savedEnd: end, active: e.active, data };
+    ev.adjust = { start: kept?.start ?? e.startedAt, end: ongoing ? Date.now() : kept?.end ?? end, savedStart: e.startedAt, savedEnd: end, active: e.active, ongoing, data };
     document.body.classList.add("ev-adjusting");
     $("#ev-adjust-bar").hidden = false;
     $("#ev-adjust").hidden = true;
     $("#ev-zoom-reset").hidden = true;
-    $("#ev-adjust-end-field").hidden = e.active;
+    $("#ev-adjust-end-field").hidden = e.active || ongoing;
+    $("#ev-adjust-ongoing-field").hidden = e.active;
+    $("#ev-adjust-ongoing").checked = ongoing;
     $("#ev-adjust-help").innerHTML = e.active
       ? 'Drag the <b class="adj-start">start</b> marker on the chart (or edit the time above). The event is still in progress, so its end stays at now until you stop it. Shaded areas are outside the event; the marker snaps to the recorded intervals.'
       : 'Drag the <b class="adj-start">start</b> and <b class="adj-end">end</b> markers on the chart (or edit the times above). Shaded areas are outside the event; markers snap to the recorded intervals.';
@@ -415,6 +419,9 @@ async function startAdjust({ keep = false } = {}) {
     $("#events").classList.remove("loading");
   }
 }
+
+// The end is "now" (not draggable) for live events and ones being resumed.
+const openEnded = (a) => a.active || a.ongoing;
 
 function stopAdjust() {
   ev.adjust = null;
@@ -429,12 +436,19 @@ async function saveAdjust() {
   const a = ev.adjust;
   if (!a) return;
   const body = { startedAt: a.start };
-  if (!a.active) body.endedAt = a.end;
+  if (!openEnded(a)) body.endedAt = a.end;
   const button = $("#ev-adjust-save");
   button.disabled = true;
   try {
-    await api("PATCH", `/api/events/${ev.detail.id}`, body);
-    ctx.toast("Event times updated.", 3000);
+    if (a.ongoing) {
+      // Resume first (fails cleanly if another event is in progress), then apply the start.
+      await api("POST", `/api/events/${ev.detail.id}/resume`);
+      if (a.start !== a.savedStart) await api("PATCH", `/api/events/${ev.detail.id}`, body);
+      ctx.toast("Event resumed — it is in progress again and will keep tracking until you stop it.", 4500);
+    } else {
+      await api("PATCH", `/api/events/${ev.detail.id}`, body);
+      ctx.toast("Event times updated.", 3000);
+    }
     ev.adjust = null;
     document.body.classList.remove("ev-adjusting");
     $("#ev-adjust-bar").hidden = true;
@@ -535,7 +549,7 @@ const windowPlugin = {
       g.fillText(label, lx + 6, area.top + 11);
     };
     marker(xs, `Start ${fmtTime(a.start, false)}`, "#0f8f6c", false);
-    marker(xe, a.active ? "Now (in progress)" : `End ${fmtTime(a.end, false)}`, "#e5484d", a.active);
+    marker(xe, openEnded(a) ? "Now (in progress)" : `End ${fmtTime(a.end, false)}`, "#e5484d", openEnded(a));
     g.restore();
   },
 };
@@ -578,11 +592,12 @@ function syncAdjustBar() {
   const unit = ev.chartOpts.metric === "outages" ? "outages" : "customers";
   $("#ev-adjust-summary").replaceChildren(
     el("span", "", `Start ${fmtTime(a.start)} (${delta(a.start, a.savedStart)})`),
-    el("span", "", a.active ? "End: still in progress" : `End ${fmtTime(a.end)} (${delta(a.end, a.savedEnd)})`),
+    el("span", "", a.active ? "End: still in progress" : a.ongoing ? "End: none — will resume and keep tracking" : `End ${fmtTime(a.end)} (${delta(a.end, a.savedEnd)})`),
     el("span", "", `Duration ${fmtDuration(a.end - a.start)}`),
     el("strong", "", peak ? `Peak in window ${num(peak.v)} ${unit} at ${fmtTime(peak.t)}` : "No data in window"),
   );
-  const changed = a.start !== a.savedStart || (!a.active && a.end !== a.savedEnd);
+  const changed = a.start !== a.savedStart || a.ongoing || (!openEnded(a) && a.end !== a.savedEnd);
+  $("#ev-adjust-save").textContent = a.ongoing ? "Save & resume" : "Save times";
   $("#ev-adjust-save").disabled = !changed;
   $("#ev-adjust-error").textContent = "";
 }
@@ -596,7 +611,7 @@ function wireAdjust() {
     const rect = canvas.getBoundingClientRect();
     const x = evt.clientX - rect.left;
     const ds = Math.abs(x - timeToX(ev.chart, a.data, a.start));
-    const de = a.active ? Infinity : Math.abs(x - timeToX(ev.chart, a.data, a.end));
+    const de = openEnded(a) ? Infinity : Math.abs(x - timeToX(ev.chart, a.data, a.end));
     if (Math.min(ds, de) > HANDLE_HIT_PX) return null;
     return ds <= de ? "start" : "end";
   };
@@ -652,6 +667,7 @@ function wireAdjust() {
     syncAdjustBar();
   });
   $("#ev-adjust-save").addEventListener("click", saveAdjust);
+  $("#ev-adjust-ongoing").addEventListener("change", (e) => startAdjust({ keep: true, ongoing: e.target.checked }));
 }
 
 // Statistics for the zoomed-in window (or the whole event).
@@ -923,6 +939,20 @@ export function initEvents(context) {
   $("#ev-back").addEventListener("click", () => (location.hash = "#events"));
   $("#ev-edit").addEventListener("click", () => ev.detail && openEdit(ev.detail));
   $("#ev-stop").addEventListener("click", () => ev.detail && openStop(ev.detail));
+  $("#ev-resume").addEventListener("click", async () => {
+    const e = ev.detail;
+    if (!e || !confirm(`Resume "${e.name}"?
+
+It becomes in progress again and keeps tracking outages until you stop it. Its current end time (${fmtTime(e.endedAt)}) is cleared.`)) return;
+    try {
+      await api("POST", `/api/events/${e.id}/resume`);
+      await refreshActive();
+      ctx.toast(`Event resumed: ${e.name}. It will keep tracking until you stop it.`, 4500);
+      loadDetail(e.id);
+    } catch (error) {
+      ctx.toast(error.message, 6000);
+    }
+  });
   $("#ev-delete").addEventListener("click", async () => {
     if (!ev.detail || !confirm(`Delete "${ev.detail.name}"? The recorded outage history is kept; only the event is removed.`)) return;
     try {

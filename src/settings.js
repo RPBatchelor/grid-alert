@@ -236,12 +236,27 @@ function syncControls() {
       : "Not configured: using built-in Open-Meteo layers.";
 }
 
-export function initSettings(handler) {
+// Settings → About: version stamp (from the build) and live feed status.
+function renderAbout() {
+  const built = new Date(__BUILD_DATE__).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+  $("#about-version").textContent = `${__APP_VERSION__}${__APP_COMMIT__ ? ` (${__APP_COMMIT__})` : ""} · built ${built}`;
+  const feeds = getFeedStatus?.()?.networks ?? {};
+  document.querySelectorAll(".src-status").forEach((dot) => {
+    const f = feeds[dot.dataset.feed];
+    dot.className = `src-status ${f ? (f.ok ? "ok" : "bad") : "unknown"}`;
+    dot.title = f ? (f.ok ? "Last fetch succeeded" : `Last fetch failed: ${f.error}`) : "Not fetched yet";
+  });
+}
+
+let getFeedStatus;
+export function initSettings(handler, feedStatus) {
   onChange = handler;
+  getFeedStatus = feedStatus;
   const dialog = $("#settings");
 
   $("#settings-button").addEventListener("click", () => {
     syncControls();
+    renderAbout();
     showSection(store.get("settingsSection", "general"));
     renderHistoryStats();
     dialog.showModal();

@@ -1,14 +1,16 @@
 {
-  "name": "victoria-event-intelligence",
+  "name": "grid-alert",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "start": "node server/index.js",
-    "build:boundaries": "node scripts/build-boundaries.mjs"
+    "build:boundaries": "node scripts/build-boundaries.mjs",
+    "build:fire-districts": "node scripts/build-fire-districts.mjs",
+    "build:fdp-areas": "node scripts/build-fdp-areas.mjs"
   },
   "devDependencies": {
     "@turf/turf": "^7.4.0",

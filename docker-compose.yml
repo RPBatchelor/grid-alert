@@ -1,0 +1,32 @@
+# Pilot deployment: the app plus a Cloudflare Tunnel (secure public access, no open router ports).
+# See DEPLOY.md. Start just the app first:  docker compose up -d app
+# then, once TUNNEL_TOKEN is in .env:       docker compose up -d
+services:
+  app:
+    build:
+      context: .
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-}
+    image: grid-alert:latest
+    container_name: grid-alert-app
+    restart: unless-stopped
+    environment:
+      - TZ=Australia/Melbourne
+      - COLLECT_INTERVAL_MINUTES=${COLLECT_INTERVAL_MINUTES:-5}
+    volumes:
+      - ./data:/data
+    # Local-network access for setup and checks (http://<pi-address>:8080). This bypasses the
+    # Cloudflare sign-in, so remove these two lines once the tunnel is working if others share
+    # your network.
+    ports:
+      - "8080:8080"
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: grid-alert-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN:-}   # from .env (DEPLOY.md step 6)
+    depends_on:
+      - app

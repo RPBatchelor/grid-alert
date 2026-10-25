@@ -48,7 +48,7 @@ export async function exportEventXlsx(id) {
   const end = event.endedAt ?? Date.now();
   const d = open();
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Victoria Event Intelligence";
+  wb.creator = "Grid Alert Victoria (grid-alert.com)";
   wb.created = new Date();
 
   // ---- Summary ----------------------------------------------------------------------------
@@ -72,7 +72,7 @@ export async function exportEventXlsx(id) {
     ["Snapshots recorded", s.snapshots],
     ["Notes", event.notes || ""],
   ];
-  summary.addRow(["Victoria Event Intelligence — event export"]).font = { bold: true, size: 14 };
+  summary.addRow(["Grid Alert Victoria — event export"]).font = { bold: true, size: 14 };
   summary.addRow([]);
   for (const [k, v] of kv) {
     const row = summary.addRow([k, v]);

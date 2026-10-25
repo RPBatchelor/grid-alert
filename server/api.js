@@ -1,7 +1,9 @@
-import { HttpError, createEvent, deleteEvent, getEvent, listEvents, stopEvent, updateEvent } from "./events.js";
+import { HttpError, createEvent, deleteEvent, getEvent, listEvents, resumeEvent, stopEvent, updateEvent } from "./events.js";
 import { exportEventXlsx } from "./exportEvent.js";
 import { getOutages, getWeather } from "./feeds.js";
-import { getHistory, getIncidents, historyPath, recordSnapshot } from "./history.js";
+import { getFireDanger } from "./fireDanger.js";
+import { getFireRestrictions } from "./fireRestrictions.js";
+import { backupDatabase, getHistory, getIncidents, historyPath, lastSnapshotTs, recordSnapshot } from "./history.js";
 
 // Fetch outages and store each fresh result in the history database.
 async function outages(maxAgeMs) {
@@ -22,6 +24,9 @@ const time = (url, key) => (url.searchParams.has(key) ? Number(url.searchParams.
 const ROUTES = [
   ["GET", /^\/api\/outages$/, (url) => outages(url.searchParams.has("force") ? 15000 : 60000)],
   ["GET", /^\/api\/weather$/, () => getWeather()],
+  ["GET", /^\/api\/health$/, () => health()],
+  ["GET", /^\/api\/fire-danger$/, () => getFireDanger()],
+  ["GET", /^\/api\/fire-restrictions$/, () => getFireRestrictions()],
   [
     "GET",
     /^\/api\/history$/,
@@ -64,6 +69,7 @@ const ROUTES = [
   ["PATCH", /^\/api\/events\/(\d+)$/, (url, body, [id]) => updateEvent(+id, body)],
   ["DELETE", /^\/api\/events\/(\d+)$/, (url, body, [id]) => deleteEvent(+id)],
   ["POST", /^\/api\/events\/(\d+)\/stop$/, (url, body, [id]) => stopEvent(+id, body)],
+  ["POST", /^\/api\/events\/(\d+)\/resume$/, (url, body, [id]) => resumeEvent(+id)],
   // Binary download: handlers may return { file: { buffer, filename, type } }.
   ["GET", /^\/api\/events\/(\d+)\/export\.xlsx$/, async (url, body, [id]) => ({ file: { ...(await exportEventXlsx(+id)), type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" } })],
 ];
@@ -86,15 +92,53 @@ async function readJson(req) {
 // Background collector: keeps history accumulating while the server runs, independent of
 // whether anyone has the app open. COLLECT_INTERVAL_MINUTES=0 disables it.
 let collector = null;
+let backupTimer = null;
+const startedAt = Date.now();
+const collectMinutes = () => Number(process.env.COLLECT_INTERVAL_MINUTES ?? 5);
+
 export function startCollector() {
   if (collector) return;
-  const minutes = Number(process.env.COLLECT_INTERVAL_MINUTES ?? 5);
+  const minutes = collectMinutes();
   if (!(minutes > 0)) return;
   const run = () => outages(minutes * 60000 - 5000).catch((error) => console.error("Collector fetch failed:", error.message));
   collector = setInterval(run, minutes * 60000);
   collector.unref?.();
   run();
   console.log(`Outage history: recording every ${minutes} min to ${historyPath}`);
+
+  // Daily backup of the history database (first one shortly after start-up).
+  const backup = () => {
+    try {
+      const file = backupDatabase();
+      if (file) console.log(`History backup written: ${file}`);
+    } catch (error) {
+      console.error("History backup failed:", error.message);
+    }
+  };
+  setTimeout(backup, 60_000).unref?.();
+  backupTimer = setInterval(backup, 60 * 60_000); // hourly check; writes at most one file per day
+  backupTimer.unref?.();
+}
+
+export function stopCollector() {
+  clearInterval(collector);
+  clearInterval(backupTimer);
+  collector = backupTimer = null;
+}
+
+// Liveness and freshness, for Docker's health check and external uptime monitoring.
+function health() {
+  const last = lastSnapshotTs();
+  const minutes = collectMinutes();
+  const staleAfterMs = minutes > 0 ? minutes * 3 * 60000 : Infinity;
+  const ageMs = last ? Date.now() - last : null;
+  return {
+    ok: minutes <= 0 || (ageMs != null && ageMs < staleAfterMs) || Date.now() - startedAt < staleAfterMs,
+    uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
+    lastSnapshot: last ? new Date(last).toISOString() : null,
+    lastSnapshotAgeSeconds: ageMs == null ? null : Math.round(ageMs / 1000),
+    collectIntervalMinutes: minutes,
+  };
 }
 
 // Connect-style middleware: (req, res, next)
@@ -112,6 +156,12 @@ export async function apiMiddleware(req, res, next) {
   try {
     const body = await readJson(req);
     const result = await route.handler(url, body, route.m.slice(1));
+    // Audit trail for changes. Behind Cloudflare Access the signed-in user's email arrives in
+    // this header (set by Cloudflare, not the browser); without Access it is "unknown".
+    if (req.method !== "GET") {
+      const who = req.headers["cf-access-authenticated-user-email"] ?? "unknown";
+      console.log(`AUDIT ${new Date().toISOString()} ${who} ${req.method} ${url.pathname}${result?.name ? ` "${result.name}"` : ""}`);
+    }
     if (result?.file) {
       const { buffer, filename, type } = result.file;
       res.writeHead(200, {
