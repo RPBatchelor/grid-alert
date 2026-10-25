@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b1217" />
+    <title>Victoria Event Intelligence</title>
+    <script>
+      try {
+        const t = JSON.parse(localStorage.getItem("settings") || "{}").theme || "dark";
+        document.documentElement.dataset.theme = t === "system" ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : t;
+      } catch {}
+    </script>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%23143a31'/%3E%3Cpath d='M13 3 5 14h6l-1 7 8-11h-6l1-7Z' fill='%235bdbb2'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <!-- Leaflet 1.4.0 is the version required by the Windy Map Forecast API. -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.4.0/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.4.0/dist/leaflet.js"></script>
+  </head>
+  <body>
+    <div id="windy" class="map-root" role="application" aria-label="Map of Victoria with weather and outage overlays"></div>
+
+    <header class="topbar">
+      <div class="topbar-spacer"></div>
+
+      <div class="updated-banner" id="updated-banner">
+        <span class="updated-label">Outage information last updated</span>
+        <strong id="updated-at">Loading…</strong>
+      </div>
+
+      <div class="topbar-actions">
+        <label class="live-switch" title="Automatically refresh outage data">
+          <input type="checkbox" id="live-toggle" />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+          <span id="live-label">Manual</span>
+        </label>
+        <button class="btn primary" id="refresh-button" type="button">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 7v5h-5M4.8 9a7.5 7.5 0 0 1 12.5-2L20 12M4 17v-5h5m10.2 3a7.5 7.5 0 0 1-12.5 2L4 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          <span>Refresh</span>
+        </button>
+      </div>
+    </header>
+
+    <main id="trends" class="trends" hidden aria-label="Outage trends">
+      <div class="trends-inner">
+        <div class="tr-filters" role="toolbar" aria-label="Trend filters">
+          <div class="seg tr-seg" id="tr-range" aria-label="Time range">
+            <button type="button" data-value="6h">6 h</button>
+            <button type="button" data-value="24h">24 h</button>
+            <button type="button" data-value="3d">3 d</button>
+            <button type="button" data-value="7d">7 d</button>
+            <button type="button" data-value="30d">30 d</button>
+            <button type="button" data-value="all">All</button>
+          </div>
+          <div class="seg tr-seg" id="tr-metric" aria-label="Measure">
+            <button type="button" data-value="customers">Customers off supply</button>
+            <button type="button" data-value="outages">Number of outages</button>
+          </div>
+          <div class="tr-chips" id="tr-types" aria-label="Outage type"></div>
+          <div class="tr-chips" id="tr-nets" aria-label="Networks"></div>
+        </div>
+
+        <div class="tr-tiles" id="tr-tiles"></div>
+
+        <section class="tr-card">
+          <div class="tr-card-head">
+            <h2 id="tr-title">Customers off supply over time</h2>
+            <div class="tr-card-tools">
+              <button type="button" class="link-button" id="tr-table-toggle" aria-expanded="false" aria-controls="tr-table">Show data table</button>
+              <div class="icon-seg" id="tr-chart" role="radiogroup" aria-label="Chart type">
+                <button type="button" data-value="bar" title="Stacked bar" aria-label="Stacked bar">
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 20V13h4v7M10 20V8h4v12M15 20v-9h4v9" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /><path d="M5 16h4M10 13h4M15 15h4" stroke="currentColor" stroke-width="1.7" /></svg>
+                </button>
+                <button type="button" data-value="area" title="Stacked area" aria-label="Stacked area">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20v-7l5-4 5 3 8-6v14H3Z" fill="currentColor" opacity=".35" /><path d="M3 20v-3l5-3 5 2 8-5v9H3Z" fill="currentColor" opacity=".8" /></svg>
+                </button>
+                <button type="button" data-value="line" title="Line (not stacked)" aria-label="Line, not stacked">
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m3 16 5-5 4 3 9-8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /><path d="m3 20 6-3 5 1 7-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="0" opacity=".55" /></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="tr-chart"><canvas id="tr-canvas" role="img" aria-label="Chart of outages over time by network"></canvas></div>
+          <p class="tr-note" id="tr-note"></p>
+          <div class="tr-table-wrap"><table class="tr-table" id="tr-table" hidden></table></div>
+        </section>
+
+        <section class="tr-card">
+          <div class="tr-card-head"><h2>Incident register</h2><span class="tag">Largest first · up to 200</span></div>
+          <div class="tr-table-wrap">
+            <table class="tr-table" id="tr-incidents">
+              <thead><tr><th>Network</th><th>Incident</th><th>Location</th><th>Type</th><th class="num">Peak customers</th><th>First seen</th><th>Last seen</th><th>Duration</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <div id="callout-dock" aria-label="Strongest wind callouts"><svg id="callout-leaders" aria-hidden="true"></svg></div>
+
+    <header class="app-brand" aria-label="Victoria Event Intelligence">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg>
+      </div>
+      <div class="sb-brand">
+        <div class="brand-name">Victoria Event Intelligence</div>
+        <div class="brand-sub">Weather × Outages</div>
+      </div>
+      <button class="sb-icon-btn" id="sb-pin" type="button" aria-pressed="false" title="Pin sidebar open"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 4h6l-1 6 3 3H7l3-3-1-6Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /><path d="M12 13v7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /></svg></button>
+    </header>
+
+    <nav class="sidebar" id="sidebar" aria-label="Main">
+      <div class="sb-scroll">
+        <div class="sb-group">
+          <div class="sb-heading sb-label">Pages</div>
+          <button class="sb-item" type="button" data-view="map" title="Map"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m3 6 6-2 6 2 6-2v14l-6 2-6-2-6 2V6Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /><path d="M9 4v14m6-12v14" stroke="currentColor" stroke-width="1.7" /></svg><span class="sb-label">Map<small>Live outages, weather and network areas</small></span></button>
+          <button class="sb-item" type="button" data-view="trends" title="Trends"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20h16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /><path d="M6 17v-4m4 4V9m4 8v-6m4 6V6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" /></svg><span class="sb-label">Trends<small>Outages over time and incident register</small></span></button>
+        </div>
+
+        <div class="sb-group" id="sb-layers-group">
+          <div class="sb-heading sb-label">Map</div>
+          <button class="sb-item" type="button" id="sb-layers-btn" title="Map layers"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /><path d="m3 12 9 5 9-5M3 16l9 5 9-5" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /></svg><span class="sb-label">Map layers<small>Weather, base map and overlays</small></span></button>
+          <div class="sb-panel sb-label" id="sb-layers">
+            <div class="sb-panel-head"><span>Weather layer</span><span class="tag" id="weather-source">Open-Meteo</span></div>
+            <div class="seg" id="weather-layers" role="radiogroup" aria-label="Weather overlay">
+              <button type="button" data-layer="speed" class="active">Wind</button>
+              <button type="button" data-layer="gust">Gusts</button>
+              <button type="button" data-layer="rain">Rain</button>
+              <button type="button" data-layer="temp">Temp</button>
+              <button type="button" data-layer="none">Off</button>
+            </div>
+            <div class="basemap-row" id="basemap-row">
+              <label for="basemap-select">Base map</label>
+              <select id="basemap-select"></select>
+            </div>
+            <div class="wind-style" id="wind-style-row">
+              <span>Wind display</span>
+              <div class="seg small" id="wind-style" role="radiogroup" aria-label="Wind display">
+                <button type="button" data-style="arrows">Arrows</button>
+                <button type="button" data-style="animated">Animated</button>
+                <button type="button" data-style="none">Hidden</button>
+              </div>
+            </div>
+            <div class="toggles">
+              <label><input type="checkbox" id="t-radar" /> Rain radar (observed)</label>
+              <label><input type="checkbox" id="t-boundaries" checked /> Network boundaries</label>
+              <label><input type="checkbox" id="t-clusters" checked /> Outage clusters</label>
+              <label><input type="checkbox" id="t-areas" checked /> Outage areas (zoom in)</label>
+              <label><input type="checkbox" id="t-windcallouts" checked /> Strongest-wind callout boxes</label>
+              <label><input type="checkbox" id="t-labels" checked /> Network summary labels</label>
+              <label><input type="checkbox" id="t-planned" /> Include planned outages</label>
+            </div>
+            <div class="net-filter" id="net-filter"></div>
+            <button class="link-button" id="reset-callouts" type="button">Reset view &amp; callouts</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="sb-foot">
+        <button class="sb-item" type="button" id="settings-button" title="Settings"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" stroke="currentColor" stroke-width="1.8" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" stroke="currentColor" stroke-width="1.6" /></svg><span class="sb-label">Settings<small>Appearance, colours, data, integrations</small></span></button>
+        <button class="sb-item sb-expand" type="button" id="sb-toggle" title="Expand sidebar" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m10 7 5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /><path d="M4 4v16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg><span class="sb-label">Collapse sidebar</span></button>
+      </div>
+    </nav>
+    <div class="sb-scrim" id="sb-scrim" hidden></div>
+
+    <aside class="outputs" id="outputs" aria-label="Impact and intelligence">
+      <section class="window" data-win="intel">
+        <button class="win-head" type="button" aria-expanded="true">
+          <span class="win-title">Automated intelligence</span><span class="tag" id="insight-count">—</span><svg class="win-chev" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
+        <div class="win-body"><div class="insights" id="insights"><div class="empty">Waiting for data…</div></div></div>
+      </section>
+      <section class="window" data-win="networks">
+        <button class="win-head" type="button" aria-expanded="true">
+          <span class="win-title">Network outages</span><span class="tag" id="network-total">—</span><svg class="win-chev" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
+        <div class="win-body"><div class="net-panels" id="network-panels"></div></div>
+      </section>
+    </aside>
+
+    <div class="timebar" id="timebar">
+      <button class="btn icon" id="play-button" type="button" aria-label="Play forecast">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7L8 5Z" fill="currentColor" /></svg>
+      </button>
+      <button class="btn now-btn" id="now-button" type="button" title="Jump back to the current hour" disabled>
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="7.5" stroke="currentColor" stroke-width="1.8" /><circle cx="12" cy="12" r="2.5" fill="currentColor" /><path d="M12 2v3m0 14v3M2 12h3m14 0h3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
+        Now
+      </button>
+      <div class="time-track">
+        <input type="range" id="time-slider" min="0" max="0" value="0" aria-label="Forecast time" />
+        <button type="button" class="now-marker" id="now-marker" aria-label="Jump to now"><span>Now</span></button>
+        <div class="time-ticks" id="time-ticks"></div>
+      </div>
+      <div class="time-label" id="time-label">—</div>
+    </div>
+
+    <div class="legend" id="legend"></div>
+
+    <dialog id="settings" class="settings" aria-labelledby="settings-title">
+      <div class="settings-shell">
+        <nav class="settings-nav" aria-label="Settings sections">
+          <h2 id="settings-title">Settings</h2>
+          <button type="button" data-section="general">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /><circle cx="16" cy="7" r="2" stroke="currentColor" stroke-width="1.8" /><circle cx="10" cy="17" r="2" stroke="currentColor" stroke-width="1.8" /></svg>
+            General
+          </button>
+          <button type="button" data-section="map">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /><path d="m3 13 9 5 9-5" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg>
+            Map layers
+          </button>
+          <button type="button" data-section="data">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><ellipse cx="12" cy="6" rx="7" ry="3" stroke="currentColor" stroke-width="1.8" /><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" stroke="currentColor" stroke-width="1.8" /></svg>
+            Data &amp; refresh
+          </button>
+          <button type="button" data-section="integrations">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 7V4m6 3V4M7 7h10v4a5 5 0 0 1-10 0V7Zm5 9v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            Integrations
+          </button>
+        </nav>
+
+        <div class="settings-body">
+          <button type="button" class="settings-close" id="settings-close" aria-label="Close settings">×</button>
+
+          <section data-panel="general" aria-labelledby="sg-title">
+            <h3 id="sg-title">General</h3>
+            <div class="settings-group">
+              <h4>Appearance</h4>
+              <p>Colour mode for panels, charts and the base map.</p>
+              <div class="theme-options" role="radiogroup" aria-label="Colour mode">
+                <button type="button" class="theme-option" role="radio" data-theme-choice="light"><div class="theme-preview tp-light"><span class="tp-bar"></span><span class="tp-side"></span><span class="tp-map"></span></div>Light</button>
+                <button type="button" class="theme-option" role="radio" data-theme-choice="dark"><div class="theme-preview tp-dark"><span class="tp-bar"></span><span class="tp-side"></span><span class="tp-map"></span></div>Dark</button>
+                <button type="button" class="theme-option" role="radio" data-theme-choice="system"><div class="theme-preview tp-system"><span class="tp-bar"></span><span class="tp-side"></span><span class="tp-map"></span></div>Match system</button>
+              </div>
+            </div>
+            <div class="settings-group">
+              <div class="setting">
+                <div><div class="setting-label">Open on</div><div class="setting-help">The view shown when the app loads without a link to a specific tab.</div></div>
+                <select id="set-default-view">
+                  <option value="map">Map</option>
+                  <option value="trends">Trends</option>
+                </select>
+              </div>
+            </div>
+          </section>
+
+          <section data-panel="map" aria-labelledby="sm-title" hidden>
+            <h3 id="sm-title">Map layers</h3>
+            <div class="settings-group">
+              <h4>Base map</h4>
+              <p>The map underneath the weather and network layers. Also available from the layer panel on the map.</p>
+              <div class="basemap-cards" id="basemap-cards" role="radiogroup" aria-label="Base map"></div>
+              <div class="setting">
+                <div><div class="setting-label">When the weather layer is Off</div><div class="setting-help">Switch to a lighter, more readable map while no weather layer is showing.</div></div>
+                <select id="set-basemap-noweather"></select>
+              </div>
+            </div>
+            <div class="settings-group">
+              <h4>Network colours</h4>
+              <p>Used for boundaries, outage areas, callouts, panels and the Trends chart. Click a swatch to pick any colour, or type a hex value.</p>
+              <div class="color-rows" id="color-rows"></div>
+              <div class="settings-actions"><button type="button" class="btn small" id="reset-colors">Reset all to defaults</button></div>
+            </div>
+            <div class="settings-group">
+              <h4>Display</h4>
+              <div class="setting">
+                <div><div class="setting-label">Boundary outline</div><div class="setting-help">A dark edge under each boundary line so it stands out on light maps, weather colours and satellite. Recommended on.</div></div>
+                <label class="switch"><input type="checkbox" id="set-casing" aria-label="Boundary outline" /><span class="switch-track"><span class="switch-thumb"></span></span></label>
+              </div>
+              <div class="setting">
+                <div><div class="setting-label">Boundary fill</div><div class="setting-help">Tint inside each network's service area.</div></div>
+                <div class="range-field"><input type="range" id="set-boundary-fill" min="0" max="30" step="1" aria-label="Boundary fill opacity" /><output id="set-boundary-fill-out"></output></div>
+              </div>
+              <div class="setting">
+                <div><div class="setting-label">Weather layer opacity</div><div class="setting-help">Strength of the wind, gust, rain and temperature colours (built-in layers).</div></div>
+                <div class="range-field"><input type="range" id="set-weather-opacity" min="20" max="90" step="1" aria-label="Weather layer opacity" /><output id="set-weather-opacity-out"></output></div>
+              </div>
+            </div>
+          </section>
+
+          <section data-panel="data" aria-labelledby="sd-title" hidden>
+            <h3 id="sd-title">Data &amp; refresh</h3>
+            <div class="settings-group">
+              <div class="setting">
+                <div><div class="setting-label">Live refresh interval</div><div class="setting-help">How often outages are re-fetched when Live is switched on.</div></div>
+                <select id="live-interval">
+                  <option value="60">Every 1 minute</option>
+                  <option value="120">Every 2 minutes</option>
+                  <option value="300">Every 5 minutes</option>
+                  <option value="600">Every 10 minutes</option>
+                </select>
+              </div>
+            </div>
+            <div class="settings-group">
+              <h4>Outage history</h4>
+              <p>The server stores a snapshot every few minutes while it runs (set with <code>COLLECT_INTERVAL_MINUTES</code>), shown in the Trends view.</p>
+              <div class="status-line" id="history-stats">Loading…</div>
+            </div>
+          </section>
+
+          <section data-panel="integrations" aria-labelledby="si-title" hidden>
+            <h3 id="si-title">Integrations</h3>
+            <div class="settings-group">
+              <h4>Windy</h4>
+              <p>With a Windy Map Forecast API key, the base map switches to Windy (ECMWF, ICON and GFS models; gusts, rain, thunder, temperature). A Windy <em>Premium</em> subscription does not include this key. Get one at api.windy.com/keys. Stored only in this browser.</p>
+              <div class="key-field">
+                <input id="windy-key" type="password" autocomplete="off" placeholder="Paste Map Forecast API key" aria-label="Windy API key" />
+                <button type="button" class="btn small" id="windy-key-toggle">Show</button>
+                <button type="button" class="btn small primary" id="windy-save">Save &amp; reload</button>
+              </div>
+              <div class="status-line" id="windy-status"></div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" hidden></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
