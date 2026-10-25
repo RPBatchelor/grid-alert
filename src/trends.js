@@ -1,71 +1,18 @@
-// Trends view: outage history from the server's SQLite store as a stacked bar/area chart,
+// Trends view: outage history from the server's SQLite store as a stacked bar/area/line chart,
 // plus an incident register for the selected range.
-import { shade } from "./color.js";
-import { BarController, BarElement, CategoryScale, Chart, Filler, Legend, LineController, LineElement, LinearScale, PointElement, Tooltip } from "chart.js";
+import { STACK_ORDER, fmtDuration, fmtTime, num, renderChartTable, renderOutageChart, seriesColors as shadeForTheme } from "./outageChart.js";
 
-Chart.register(BarController, BarElement, LineController, LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend, Filler);
-
-// Series colours are the user's network colours (Settings → Map layers). They are bright for
-// the map, so on the light theme the chart uses the same hues 0.2 darker in OKLCH lightness
-// (validated: all pairs distinct for normal and colour-blind vision on white).
-// Stack order (bottom -> top): AusNet is the base layer and the sister networks CitiPower and
-// Powercor sit together; within those rules this order gives the best adjacent-segment
-// separation in both themes. Segments are separated by a surface-coloured gap, and every
-// value is in the table.
-const STACK_ORDER = ["ausnet", "citipower", "powercor", "jemena", "ue"];
-const LIGHT_SHADE = -0.2;
-
-function seriesColors() {
-  const colors = ctx.colors();
-  if (document.documentElement.dataset.theme !== "light") return colors;
-  return Object.fromEntries(Object.entries(colors).map(([k, c]) => [k, shade(c, LIGHT_SHADE)]));
-}
-
-// Theme ink is read from the CSS tokens so the chart follows light/dark mode.
-function ink() {
-  const css = getComputedStyle(document.documentElement);
-  const v = (name) => css.getPropertyValue(name).trim();
-  return { primary: v("--text"), secondary: v("--text-2"), muted: v("--muted"), grid: v("--line-2"), surface: v("--surface"), tooltip: v("--tooltip-bg"), border: v("--line-strong") };
-}
+const seriesColors = () => shadeForTheme(ctx.colors());
 
 const HOUR = 3600_000;
 const RANGES = { "6h": 6 * HOUR, "24h": 24 * HOUR, "3d": 72 * HOUR, "7d": 168 * HOUR, "30d": 720 * HOUR, all: null };
 const NICE_BUCKETS = [5, 10, 15, 30, 60, 120, 180, 360, 720, 1440].map((m) => m * 60000);
-const TZ = "Australia/Melbourne";
 
 const $ = (s) => document.querySelector(s);
-const num = (n) => Math.round(n).toLocaleString("en-AU");
 
 let ctx; // { names, getLive, store }
 const tr = { chart: null, data: null, incidents: [], incidentTotal: 0, loading: null };
 let opts;
-
-function fmtTime(ms, withDay = true) {
-  return new Intl.DateTimeFormat("en-AU", { timeZone: TZ, ...(withDay ? { weekday: "short", day: "numeric", month: "short" } : {}), hour: "numeric", minute: "2-digit" }).format(new Date(ms));
-}
-
-function fmtDuration(ms) {
-  const m = Math.round(ms / 60000);
-  if (m < 60) return `${m} min`;
-  const h = Math.floor(m / 60);
-  return h < 48 ? `${h} h ${m % 60} min` : `${Math.round(h / 24)} days`;
-}
-
-function hatch(color) {
-  const c = document.createElement("canvas");
-  c.width = c.height = 8;
-  const g = c.getContext("2d");
-  g.fillStyle = `${color}40`;
-  g.fillRect(0, 0, 8, 8);
-  g.strokeStyle = color;
-  g.lineWidth = 2;
-  g.beginPath();
-  g.moveTo(0, 8); g.lineTo(8, 0);
-  g.moveTo(-2, 2); g.lineTo(2, -2);
-  g.moveTo(6, 10); g.lineTo(10, 6);
-  g.stroke();
-  return g.createPattern(c, "repeat");
-}
 
 function save() {
   ctx.store.set("trends", JSON.stringify({ ...opts, types: [...opts.types], nets: [...opts.nets] }));
@@ -119,6 +66,10 @@ export function initTrends(context) {
   segment($("#tr-chart"), "chart");
   chips($("#tr-types"), "types", [["unplanned", "Unplanned"], ["planned", "Planned"]]);
   chips($("#tr-nets"), "nets", STACK_ORDER.map((n) => [n, ctx.names[n]]), seriesColors());
+  $("#tr-zoom-reset").addEventListener("click", () => {
+    tr.chart?.resetZoom();
+    $("#tr-zoom-reset").hidden = true;
+  });
   $("#tr-table-toggle").addEventListener("click", (e) => {
     const table = $("#tr-table");
     table.hidden = !table.hidden;
@@ -164,89 +115,25 @@ export function refreshTrends() {
   if (tr.data && !$("#trends").hidden) render();
 }
 
-function seriesKeys() {
-  const keys = [];
-  for (const net of STACK_ORDER) {
-    if (!opts.nets.has(net)) continue;
-    for (const type of ["unplanned", "planned"]) if (opts.types.has(type)) keys.push([net, type]);
-  }
-  return keys;
-}
-
 function render() {
   const d = tr.data;
-  const bothTypes = opts.types.size > 1;
-  const sameDay = d.to - d.from <= 24 * HOUR;
-  const labels = d.buckets.map((b) => fmtTime(b.start, !sameDay));
-  const metricLabel = opts.metric === "outages" ? "outages" : "customers off supply";
-  const keys = seriesKeys();
-  const isBar = opts.chart === "bar";
-  const isLine = opts.chart === "line"; // unstacked: each network on its own values
-  const INK = ink();
-  const SURFACE = INK.surface;
-  const COLORS = seriesColors();
-
-  const datasets = keys.map(([net, type], i) => {
-    const color = COLORS[net];
-    const label = `${ctx.names[net]}${bothTypes ? ` · ${type}` : ""}`;
-    const data = d.series[`${net}|${type}`] ?? [];
-    if (isLine) {
-      // Planned outages are dashed so type stays readable without fills.
-      return { type: "line", label, data, backgroundColor: color, borderColor: color, borderWidth: 2, borderDash: type === "planned" ? [6, 4] : [], pointRadius: 0, pointHoverRadius: 5, pointHoverBackgroundColor: color, pointHoverBorderColor: SURFACE, pointHoverBorderWidth: 2, tension: 0.25, fill: false, spanGaps: false };
-    }
-    const fill = type === "planned" ? hatch(color) : isBar ? color : `${color}d0`;
-    return isBar
-      ? { type: "bar", label, data, backgroundColor: fill, borderColor: SURFACE, borderWidth: { top: 2, right: 0, bottom: 0, left: 0 }, borderSkipped: false, stack: "s", categoryPercentage: 0.92, barPercentage: 1 }
-      : { type: "line", label, data, backgroundColor: fill, borderColor: color, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, pointHoverBorderColor: SURFACE, pointHoverBorderWidth: 2, tension: 0.25, fill: i === 0 ? "origin" : "-1", stack: "s", spanGaps: false };
+  const { chart, labels, keys, metricLabel } = renderOutageChart($("#tr-canvas"), tr.chart, {
+    data: d,
+    chart: opts.chart,
+    metric: opts.metric,
+    types: opts.types,
+    nets: opts.nets,
+    names: ctx.names,
+    colors: ctx.colors(),
+    zoom: true,
+    onZoom: (range, zoomed) => ($("#tr-zoom-reset").hidden = !zoomed),
   });
-
-  const config = {
-    data: { labels, datasets },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
-      interaction: { mode: "index", intersect: false },
-      scales: {
-        x: { stacked: !isLine, grid: { display: false }, border: { color: INK.grid }, ticks: { color: INK.muted, maxRotation: 0, autoSkip: true, maxTicksLimit: 10, font: { size: 11 } } },
-        y: { stacked: !isLine, beginAtZero: true, grid: { color: INK.grid }, border: { display: false }, ticks: { color: INK.muted, precision: 0, callback: (v) => num(v), font: { size: 11 } }, title: { display: true, text: metricLabel, color: INK.muted, font: { size: 11 } } },
-      },
-      plugins: {
-        // Legend keys mirror the mark: swatches for fills, short strokes for lines (a zero-height
-        // box is drawn as a stroke that carries the dataset's dash, so planned reads as dashed).
-        legend: { position: "top", align: "start", labels: isLine ? { color: INK.secondary, boxWidth: 22, boxHeight: 0, font: { size: 12 } } : { color: INK.secondary, boxWidth: 12, boxHeight: 12, useBorderRadius: true, borderRadius: 2, font: { size: 12 } } },
-        tooltip: {
-          backgroundColor: INK.tooltip,
-          borderColor: INK.border,
-          borderWidth: 1,
-          titleColor: INK.secondary,
-          bodyColor: INK.primary,
-          footerColor: INK.primary,
-          padding: 10,
-          // Stacked: top of stack first. Line: largest value first.
-          itemSort: (a, b) => (isLine ? (b.raw ?? -1) - (a.raw ?? -1) : b.datasetIndex - a.datasetIndex),
-          callbacks: {
-            title: (items) => {
-              const b = d.buckets[items[0].dataIndex];
-              return b.at ? `${fmtTime(b.at)} (peak snapshot in interval)` : `${fmtTime(b.start)} · no data recorded`;
-            },
-            label: (item) => (item.raw == null ? `—  ${item.dataset.label}` : `${num(item.raw)}  ${item.dataset.label}`),
-            footer: (items) => {
-              const total = items.reduce((s, i) => s + (i.raw ?? 0), 0);
-              return `${num(total)} total ${metricLabel}`;
-            },
-          },
-        },
-      },
-    },
-  };
-
+  tr.chart = chart;
+  $("#tr-zoom-reset").hidden = true;
   $("#tr-title").textContent = opts.metric === "outages" ? "Number of outages over time" : "Customers off supply over time";
-  if (tr.chart) tr.chart.destroy();
-  tr.chart = new Chart($("#tr-canvas"), config);
 
   renderTiles(metricLabel);
-  renderTable(labels, keys);
+  renderChartTable($("#tr-table"), d, labels, keys, ctx.names, opts.types.size > 1);
   renderIncidents();
 
   const c = d.coverage;
@@ -299,27 +186,6 @@ function cell(row, text, cls) {
   if (cls) td.className = cls;
   row.append(td);
   return td;
-}
-
-function renderTable(labels, keys) {
-  const d = tr.data;
-  const table = $("#tr-table");
-  table.replaceChildren();
-  const head = table.createTHead().insertRow();
-  ["Interval", ...keys.map(([n, t]) => `${ctx.names[n]}${opts.types.size > 1 ? ` · ${t}` : ""}`), "Total"].forEach((h, i) => {
-    const th = document.createElement("th");
-    th.textContent = h;
-    if (i > 0) th.className = "num";
-    head.append(th);
-  });
-  const body = table.createTBody();
-  d.buckets.forEach((b, i) => {
-    if (d.totals[i] == null) return;
-    const row = body.insertRow();
-    cell(row, labels[i]);
-    for (const [n, t] of keys) cell(row, d.series[`${n}|${t}`]?.[i] == null ? "—" : num(d.series[`${n}|${t}`][i]), "num");
-    cell(row, num(d.totals[i]), "num strong");
-  });
 }
 
 function renderIncidents() {

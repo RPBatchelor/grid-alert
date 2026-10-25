@@ -110,6 +110,56 @@ Victoria; the weather field at 62% over dark and light maps; and Windy's near-op
 Custom colours chosen in Settings are kept. Settings flags any colour too dark to stand out
 inside the halo.
 
+## Events
+
+An event is a named period, such as "Thunderstorm – statewide 25 October", recorded against
+the outage history so it can be reviewed and analysed afterwards.
+
+- **Start.** Use **Start event** in the top bar (any page) or on the Events page. Give it:
+  - a name
+  - a category: bushfire, heatwave, flood, storm, thunderstorm, lightning or other
+  - an optional start time, if logging late
+  - optional notes
+
+  While it runs, the top bar shows a red recording indicator with the elapsed time. Only one
+  event can be in progress at a time.
+- **Stop.** Use **Stop** in the top bar or on the event page. You can adjust the end time and
+  add closing notes.
+- **Events page** (sidebar). Lists all events, newest first. Search names and notes, and
+  filter by category, status (in progress or completed) and date range.
+- **Event detail.**
+  - **Summary figures:** duration, peak customers off supply and when, unplanned incidents
+    (and how many began during the event), approximate customer-minutes off supply, and
+    networks affected.
+  - **By-network table:** each network's peak, incidents, customer-minutes and share.
+  - **Chart:** stacked bar, stacked area or line. Drag across it to zoom into a period; the
+    statistics above the chart then cover that period. Shift-drag pans, Ctrl + scroll zooms,
+    and **Reset zoom** returns to the whole event.
+  - **Incident list:** sortable and searchable, with CSV download.
+  - **Export (Excel):** downloads an `.xlsx` workbook of the event's outage data, with times in
+    Melbourne local time:
+    - **Summary:** event details, the headline figures and the per-network breakdown.
+    - **Customers over time:** one row per snapshot with unplanned customers and outage counts
+      per network, planned customers, totals, and the number of networks reporting.
+    - **Incident timeline:** customers off supply for each incident at each snapshot. This is
+      recorded from this version onward; older periods show a note instead.
+    - **Incidents:** the incident register, with cause, last status, peak and last customers,
+      first and last seen, duration, whether it began during the event, and coordinates.
+
+    An in-progress event exports the data recorded so far.
+  - **Adjust times:** widens the chart to show the history before and after the event, with
+    draggable start and end markers. Shaded areas fall outside the event, and markers snap to the
+    recording intervals. As you drag, a bar shows the new start, end, duration, change from the
+    saved times and the peak inside the window, with exact date/time fields for keyboard entry.
+    **Save times** applies the change and recalculates all statistics. For an event still in
+    progress, only the start can be moved.
+  - **Edit:** name, category, notes and times. **Delete** removes the event but keeps the
+    recorded history.
+
+Events are stored in the same SQLite file as the outage history (`events` table). Their
+statistics are calculated from the snapshots recorded in the window, so the server must be
+running during an event to capture it. The Trends chart supports the same drag-to-zoom.
+
 ## Outage history & Trends view
 
 While the server runs it records every fresh outage fetch to SQLite at `data/history.sqlite`
@@ -118,6 +168,8 @@ open, and refreshes from the app are recorded too (at most one per 50 s).
 
 - `snapshots` / `totals`: per network × planned/unplanned outage count and customers off supply
   at each fetch. A tracker that failed is stored as a gap, not as zero.
+- `incident_observations`: each incident's customers and status at every snapshot, used for
+  the event export's incident timeline.
 - `incidents`: register of every incident seen, with first and last seen times, peak and latest
   customers, location and cause.
 

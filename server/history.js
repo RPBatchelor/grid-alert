@@ -12,7 +12,7 @@ const DB_PATH = resolve(process.env.HISTORY_DB ?? fileURLToPath(new URL("../data
 const MIN_GAP_MS = 50_000; // forced refreshes closer together than this are not stored
 
 let db;
-function open() {
+export function open() {
   if (db) return db;
   mkdirSync(dirname(DB_PATH), { recursive: true });
   db = new DatabaseSync(DB_PATH);
@@ -47,6 +47,15 @@ function open() {
       PRIMARY KEY (network, id)
     );
     CREATE INDEX IF NOT EXISTS incidents_seen ON incidents (last_seen, first_seen);
+    -- Per-snapshot state of every incident, so each incident's customers can be traced over time.
+    CREATE TABLE IF NOT EXISTS incident_observations (
+      snapshot_id INTEGER NOT NULL REFERENCES snapshots (id),
+      network TEXT NOT NULL,
+      id TEXT NOT NULL,
+      customers INTEGER NOT NULL,
+      status TEXT,
+      PRIMARY KEY (snapshot_id, network, id)
+    );
   `);
   return db;
 }
@@ -65,6 +74,7 @@ export function recordSnapshot(body) {
       type = excluded.type, place = excluded.place, cause = excluded.cause, status = excluded.status,
       last_seen = excluded.last_seen, last_customers = excluded.last_customers,
       peak_customers = MAX(incidents.peak_customers, excluded.peak_customers)`);
+  const insertObservation = d.prepare("INSERT OR REPLACE INTO incident_observations (snapshot_id, network, id, customers, status) VALUES (?, ?, ?, ?, ?)");
   d.exec("BEGIN");
   try {
     const { lastInsertRowid: snap } = d.prepare("INSERT INTO snapshots (ts) VALUES (?)").run(ts);
@@ -77,6 +87,7 @@ export function recordSnapshot(body) {
       }
       for (const i of feed.incidents) {
         upsertIncident.run(network, i.id, i.type, i.place ?? null, i.cause ?? null, i.status ?? null, i.lat ?? null, i.lon ?? null, ts, ts, i.customers, i.customers);
+        insertObservation.run(snap, network, i.id, i.customers, i.status ?? null);
       }
     }
     d.exec("COMMIT");

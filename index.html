@@ -31,6 +31,7 @@
       </div>
 
       <div class="topbar-actions">
+        <div class="event-control" id="event-control" aria-live="polite"></div>
         <label class="live-switch" title="Automatically refresh outage data">
           <input type="checkbox" id="live-toggle" />
           <span class="switch-track"><span class="switch-thumb"></span></span>
@@ -42,6 +43,133 @@
         </button>
       </div>
     </header>
+
+    <main id="events" class="page events-page" hidden aria-label="Events">
+      <div class="trends-inner">
+        <!-- List -->
+        <div id="ev-list-view">
+          <div class="ev-head">
+            <div>
+              <h1>Events</h1>
+              <p class="ev-sub">Named periods such as storms or heatwaves, recorded against the outage history for review and analysis.</p>
+            </div>
+            <button class="btn primary" id="ev-start-btn" type="button">Start event</button>
+          </div>
+          <div class="tr-filters ev-filters" role="search" aria-label="Filter events">
+            <input class="ev-search" id="ev-q" type="search" placeholder="Search names and notes" aria-label="Search events" />
+            <select id="ev-category" aria-label="Category"></select>
+            <div class="seg tr-seg" id="ev-status" aria-label="Status">
+              <button type="button" data-value="" class="active">All</button>
+              <button type="button" data-value="active">In progress</button>
+              <button type="button" data-value="completed">Completed</button>
+            </div>
+            <label class="ev-date">From <input type="date" id="ev-from" /></label>
+            <label class="ev-date">To <input type="date" id="ev-to" /></label>
+            <button class="link-button" id="ev-clear" type="button">Clear filters</button>
+          </div>
+          <section class="tr-card">
+            <div class="tr-table-wrap ev-list-wrap">
+              <table class="tr-table ev-table" id="ev-table">
+                <thead><tr><th>Event</th><th>Category</th><th>Started</th><th>Ended</th><th>Duration</th><th class="num">Peak customers</th><th class="num">Incidents</th><th class="num">Customer-minutes</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <p class="tr-note" id="ev-list-note"></p>
+          </section>
+        </div>
+
+        <!-- Detail -->
+        <div id="ev-detail-view" hidden>
+          <button class="link-button ev-back" id="ev-back" type="button">← All events</button>
+          <div class="ev-title-row">
+            <div>
+              <h1 id="ev-name">Loading…</h1>
+              <div class="ev-meta" id="ev-meta"></div>
+            </div>
+            <div class="ev-actions">
+              <a class="btn small" id="ev-export" href="#" download title="Download the event's outage data as an Excel workbook">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                Export (Excel)
+              </a>
+              <button class="btn small" id="ev-edit" type="button">Edit</button>
+              <button class="btn small" id="ev-stop" type="button" hidden>■ Stop event</button>
+              <button class="btn small danger" id="ev-delete" type="button">Delete</button>
+            </div>
+          </div>
+          <p class="ev-notes" id="ev-notes" hidden></p>
+          <div class="tr-tiles ev-tiles" id="ev-tiles"></div>
+
+          <section class="tr-card">
+            <div class="tr-card-head">
+              <h2 id="ev-chart-title">Customers off supply during the event</h2>
+              <div class="tr-card-tools">
+                <button type="button" class="btn small" id="ev-adjust" title="Move the start and end markers on the chart">
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 4v16M18 4v16M6 12h12M9 9l-3 3 3 3M15 9l3 3-3 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  Adjust times
+                </button>
+                <button type="button" class="btn small" id="ev-zoom-reset" hidden>Reset zoom</button>
+                <button type="button" class="link-button" id="ev-table-toggle" aria-expanded="false" aria-controls="ev-table-data">Show data table</button>
+                <div class="icon-seg" id="ev-chart-type" role="radiogroup" aria-label="Chart type">
+                  <button type="button" data-value="bar" title="Stacked bar" aria-label="Stacked bar"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 20V13h4v7M10 20V8h4v12M15 20v-9h4v9" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /><path d="M5 16h4M10 13h4M15 15h4" stroke="currentColor" stroke-width="1.7" /></svg></button>
+                  <button type="button" data-value="area" title="Stacked area" aria-label="Stacked area"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20v-7l5-4 5 3 8-6v14H3Z" fill="currentColor" opacity=".35" /><path d="M3 20v-3l5-3 5 2 8-5v9H3Z" fill="currentColor" opacity=".8" /></svg></button>
+                  <button type="button" data-value="line" title="Line (not stacked)" aria-label="Line, not stacked"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m3 16 5-5 4 3 9-8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /><path d="m3 20 6-3 5 1 7-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity=".55" /></svg></button>
+                </div>
+              </div>
+            </div>
+            <div class="ev-chart-filters">
+              <div class="seg tr-seg" id="ev-metric" aria-label="Measure">
+                <button type="button" data-value="customers">Customers off supply</button>
+                <button type="button" data-value="outages">Number of outages</button>
+              </div>
+              <div class="tr-chips" id="ev-types" aria-label="Outage type"></div>
+              <div class="tr-chips" id="ev-nets" aria-label="Networks"></div>
+            </div>
+            <div class="ev-adjust-bar" id="ev-adjust-bar" hidden>
+              <div class="ev-adjust-fields">
+                <label>Start <input type="datetime-local" id="ev-adjust-start" /></label>
+                <label id="ev-adjust-end-field">End <input type="datetime-local" id="ev-adjust-end" /></label>
+                <div class="ev-adjust-buttons">
+                  <button type="button" class="link-button" id="ev-adjust-reset">Back to saved times</button>
+                  <button type="button" class="btn small" id="ev-adjust-cancel">Cancel</button>
+                  <button type="button" class="btn small primary" id="ev-adjust-save" disabled>Save times</button>
+                </div>
+              </div>
+              <div class="ev-adjust-summary" id="ev-adjust-summary" aria-live="polite"></div>
+              <p class="ev-adjust-help" id="ev-adjust-help"></p>
+              <p class="form-error" id="ev-adjust-error" role="alert"></p>
+            </div>
+            <div class="ev-selection" id="ev-selection" aria-live="polite"></div>
+            <div class="tr-chart ev-chart"><canvas id="ev-canvas" role="img" aria-label="Chart of outages during the event by network"></canvas></div>
+            <p class="tr-hint">Drag across the chart to zoom into a period and see its statistics above · Shift-drag to pan · Ctrl + scroll to zoom</p>
+            <div class="tr-table-wrap"><table class="tr-table" id="ev-table-data" hidden></table></div>
+          </section>
+
+          <section class="tr-card">
+            <div class="tr-card-head"><h2>By network</h2><span class="tag">Unplanned · sorted by customer-minutes</span></div>
+            <div class="tr-table-wrap">
+              <table class="tr-table" id="ev-networks">
+                <thead><tr><th>Network</th><th class="num">Peak customers</th><th>Peak at</th><th class="num">Incidents</th><th class="num">Customer-minutes</th><th>Share of customer-minutes</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="tr-card">
+            <div class="tr-card-head">
+              <h2>Incidents</h2>
+              <div class="tr-card-tools">
+                <span class="tag" id="ev-incident-count"></span>
+                <input class="ev-search small" id="ev-incident-search" type="search" placeholder="Search incidents" aria-label="Search incidents" />
+                <button class="btn small" id="ev-csv" type="button">Download CSV</button>
+              </div>
+            </div>
+            <div class="tr-table-wrap ev-incidents-wrap">
+              <table class="tr-table" id="ev-incidents"><thead><tr></tr></thead><tbody></tbody></table>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
 
     <main id="trends" class="trends" hidden aria-label="Outage trends">
       <div class="trends-inner">
@@ -68,6 +196,7 @@
           <div class="tr-card-head">
             <h2 id="tr-title">Customers off supply over time</h2>
             <div class="tr-card-tools">
+              <button type="button" class="btn small" id="tr-zoom-reset" hidden>Reset zoom</button>
               <button type="button" class="link-button" id="tr-table-toggle" aria-expanded="false" aria-controls="tr-table">Show data table</button>
               <div class="icon-seg" id="tr-chart" role="radiogroup" aria-label="Chart type">
                 <button type="button" data-value="bar" title="Stacked bar" aria-label="Stacked bar">
@@ -83,6 +212,7 @@
             </div>
           </div>
           <div class="tr-chart"><canvas id="tr-canvas" role="img" aria-label="Chart of outages over time by network"></canvas></div>
+          <p class="tr-hint">Drag across the chart to zoom into a period · Shift-drag to pan · Ctrl + scroll to zoom</p>
           <p class="tr-note" id="tr-note"></p>
           <div class="tr-table-wrap"><table class="tr-table" id="tr-table" hidden></table></div>
         </section>
@@ -118,6 +248,7 @@
           <div class="sb-heading sb-label">Pages</div>
           <button class="sb-item" type="button" data-view="map" title="Map"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m3 6 6-2 6 2 6-2v14l-6 2-6-2-6 2V6Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /><path d="M9 4v14m6-12v14" stroke="currentColor" stroke-width="1.7" /></svg><span class="sb-label">Map<small>Live outages, weather and network areas</small></span></button>
           <button class="sb-item" type="button" data-view="trends" title="Trends"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20h16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /><path d="M6 17v-4m4 4V9m4 8v-6m4 6V6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" /></svg><span class="sb-label">Trends<small>Outages over time and incident register</small></span></button>
+          <button class="sb-item" type="button" data-view="events" title="Events"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 21V4h10l-1 4h6l-2 7h-8l1-4H5" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /></svg><span class="sb-label">Events<small>Start, stop and analyse major events</small></span></button>
         </div>
 
         <div class="sb-group" id="sb-layers-group">
@@ -241,6 +372,7 @@
                 <select id="set-default-view">
                   <option value="map">Map</option>
                   <option value="trends">Trends</option>
+                  <option value="events">Events</option>
                 </select>
               </div>
             </div>
@@ -315,6 +447,48 @@
           </section>
         </div>
       </div>
+    </dialog>
+
+
+    <dialog id="ev-start-dialog" class="form-dialog" aria-labelledby="ev-start-title">
+      <form novalidate>
+        <h2 id="ev-start-title">Start an event</h2>
+        <p class="dialog-sub">Outages from the start time onward are analysed under this event until you stop it.</p>
+        <label class="field"><span>Name</span><input name="name" required maxlength="120" placeholder="e.g. Thunderstorm – statewide 25 October" /></label>
+        <div class="field-row">
+          <label class="field"><span>Category</span><select name="category"></select></label>
+          <label class="field"><span>Start time</span><input name="startedAt" type="datetime-local" required /></label>
+        </div>
+        <label class="field"><span>Notes <small>(optional)</small></span><textarea name="notes" rows="3" placeholder="Warnings, trigger, areas affected…"></textarea></label>
+        <p class="form-error" id="ev-start-error" role="alert"></p>
+        <div class="dialog-actions"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Start event</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="ev-stop-dialog" class="form-dialog" aria-labelledby="ev-stop-title">
+      <form novalidate>
+        <h2 id="ev-stop-title">Stop event</h2>
+        <p class="dialog-sub" id="ev-stop-name"></p>
+        <label class="field"><span>End time</span><input name="endedAt" type="datetime-local" required /></label>
+        <label class="field"><span>Closing notes <small>(optional)</small></span><textarea name="notes" rows="3" placeholder="Outcome, restoration notes…"></textarea></label>
+        <p class="form-error" id="ev-stop-error" role="alert"></p>
+        <div class="dialog-actions"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Stop event</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="ev-edit-dialog" class="form-dialog" aria-labelledby="ev-edit-title">
+      <form novalidate>
+        <h2 id="ev-edit-title">Edit event</h2>
+        <label class="field"><span>Name</span><input name="name" required maxlength="120" /></label>
+        <div class="field-row">
+          <label class="field"><span>Category</span><select name="category"></select></label>
+          <label class="field"><span>Start time</span><input name="startedAt" type="datetime-local" required /></label>
+        </div>
+        <div class="field-row" id="ev-edit-end-row"><label class="field"><span>End time</span><input name="endedAt" type="datetime-local" /></label></div>
+        <label class="field"><span>Notes</span><textarea name="notes" rows="4"></textarea></label>
+        <p class="form-error" id="ev-edit-error" role="alert"></p>
+        <div class="dialog-actions"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Save</button></div>
+      </form>
     </dialog>
 
     <div class="toast" id="toast" role="status" hidden></div>

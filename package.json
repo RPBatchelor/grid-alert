@@ -18,6 +18,11 @@
     "vite": "^6.4.1"
   },
   "dependencies": {
-    "chart.js": "^4.4.7"
+    "chart.js": "^4.4.7",
+    "chartjs-plugin-zoom": "^2.2.0",
+    "exceljs": "^4.4.0"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
   }
 }

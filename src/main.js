@@ -2,6 +2,7 @@ import "./style.css";
 import { NETWORKS, buildInsights, buildSamplePoints, clusterIncidents, nowIndex, setNetworkColors, strongestWind } from "./intel.js";
 import { BASEMAPS } from "./basemaps.js";
 import { HALO, applyTheme, getSettings, initSettings, loadSettings, resolvedTheme, setSetting } from "./settings.js";
+import { initEvents, refreshActive, refreshEvents, repaintEvents, showEvents, updateStartButton } from "./events.js";
 import { initTrends, loadTrends, refreshTrends } from "./trends.js";
 import { SCALES, WindField } from "./windfield.js";
 
@@ -209,6 +210,8 @@ async function refresh({ force = false } = {}) {
     }
     renderAll();
     if (state.view === "trends") loadTrends();
+    if (state.view === "events") refreshEvents();
+    refreshActive();
   } finally {
     button.disabled = false;
     button.querySelector("span").textContent = "Refresh";
@@ -534,6 +537,7 @@ function onSettingChange(key) {
     syncBoundaries();
     updateLeaders();
     refreshTrends();
+    repaintEvents();
   }
   if (key === "colors") {
     setNetworkColors(s.colors);
@@ -544,6 +548,7 @@ function onSettingChange(key) {
       syncBoundaries();
       renderAll();
       refreshTrends();
+    repaintEvents();
     });
   }
   if (key === "weatherOpacity") layers.wind?.setOpacity(s.weatherOpacity);
@@ -677,18 +682,27 @@ function setLive(on) {
 
 // ---- Views (Map / Trends) ------------------------------------------------------------
 
-function setView(view) {
+// Routes: #trends, #events, #events/<id>; no hash = map.
+function parseRoute() {
+  const m = location.hash.match(/^#(map|trends|events)(?:\/(\d+))?$/);
+  return m ? { view: m[1], id: m[2] ? +m[2] : null } : null;
+}
+
+function setView(view, id = null) {
   state.view = view;
-  document.body.classList.toggle("view-trends", view === "trends");
+  document.body.classList.toggle("view-page", view !== "map");
   $("#trends").hidden = view !== "trends";
+  $("#events").hidden = view !== "events";
   document.querySelectorAll(".sb-item[data-view]").forEach((b) => {
     b.classList.toggle("active", b.dataset.view === view);
     b.setAttribute("aria-current", b.dataset.view === view ? "page" : "false");
   });
   $("#sb-layers-group").hidden = view !== "map";
-  if (location.hash !== `#${view}`) history.replaceState(null, "", view === "map" ? location.pathname : `#${view}`);
+  const hash = view === "map" ? "" : `#${view}${id != null ? `/${id}` : ""}`;
+  if (location.hash !== hash) history.replaceState(null, "", hash || location.pathname);
   closeSidebar();
   if (view === "trends") loadTrends();
+  else if (view === "events") showEvents(id);
   else {
     state.map?.invalidateSize();
     renderWindCallouts();
@@ -873,8 +887,19 @@ async function boot() {
     getLive: () => state.outages,
     store,
   });
-  window.addEventListener("hashchange", () => setView(location.hash === "#trends" ? "trends" : "map"));
-  setView(location.hash === "#trends" ? "trends" : location.hash === "#map" ? "map" : settings.defaultView);
+  initEvents({
+    names: Object.fromEntries(Object.entries(NETWORKS).map(([k, m]) => [k, m.name])),
+    colors: () => Object.fromEntries(Object.entries(NETWORKS).map(([k, m]) => [k, m.color])),
+    store,
+    toast,
+    onActiveChange: () => updateStartButton(),
+  });
+  window.addEventListener("hashchange", () => {
+    const r = parseRoute();
+    setView(r?.view ?? "map", r?.id ?? null);
+  });
+  const route = parseRoute();
+  setView(route ? route.view : settings.defaultView, route?.id ?? null);
   setWindStyle(state.windStyle);
   setVariable(state.variable);
   await loadBoundaries();
