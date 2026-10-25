@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.30">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>deploy</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="DEPLOY_files/libs/clipboard/clipboard.min.js"></script>
+<script src="DEPLOY_files/libs/quarto-html/quarto.js" type="module"></script>
+<script src="DEPLOY_files/libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="DEPLOY_files/libs/quarto-html/popper.min.js"></script>
+<script src="DEPLOY_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="DEPLOY_files/libs/quarto-html/anchor.min.js"></script>
+<link href="DEPLOY_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="DEPLOY_files/libs/quarto-html/quarto-syntax-highlighting-b6a8276bf55561bdbc268162d41bd1f7.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="DEPLOY_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="DEPLOY_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="DEPLOY_files/libs/bootstrap/bootstrap-efbb37e9afcc02144ebbc7afd12a776f.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+
+
+</head>
+
+<body class="fullcontent quarto-light">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+
+<main class="content" id="quarto-document-content">
+
+
+
+
+<section id="pilot-deployment-on-a-raspberry-pi-5-grid-alert.com" class="level1">
+<h1>Pilot deployment on a Raspberry Pi 5 — grid-alert.com</h1>
+<p>This runs Grid Alert Victoria 24/7 on a Raspberry Pi 5 at home or in the office. Pilot users reach it from anywhere (office, home, phone) at <strong>https://grid-alert.com</strong> and sign in with a one-time email code. No router ports are opened.</p>
+<pre><code>Pilot users (browser/phone)
+        │  HTTPS + sign-in (Cloudflare Access)
+        ▼
+Cloudflare edge ◄──── outbound-only tunnel ──── Raspberry Pi 5
+                                                 ├─ grid-alert-tunnel  (cloudflared)
+                                                 └─ grid-alert-app     (Node server + historian)
+                                                      └─ ./data/history.sqlite (+ daily backups)</code></pre>
+<p><strong>Costs:</strong></p>
+<ul>
+<li>Hardware: about A$200–250 one-off (if you don’t already have it).</li>
+<li>Domain: about A$15–20 a year.</li>
+<li>Cloudflare Tunnel and Access: free for up to 50 users.</li>
+<li>Power: about A$15 a year.</li>
+</ul>
+<p><strong>Time:</strong> about 1–1.5 hours end to end, most of it waiting for installs and the first build.</p>
+<hr>
+<section id="before-you-start-on-your-pc" class="level2">
+<h2 class="anchored" data-anchor-id="before-you-start-on-your-pc">0. Before you start (on your PC)</h2>
+<ol type="1">
+<li><strong>Commit and push</strong> the deployment files to GitHub, so the Pi can download them:
+<ul>
+<li><code>Dockerfile</code>, <code>.dockerignore</code>, <code>docker-compose.yml</code>, <code>.env.example</code></li>
+<li><code>DEPLOY.md</code>, <code>scripts/pi-update.sh</code></li>
+<li>the <code>server/</code> changes</li>
+</ul></li>
+<li><strong>Check the repository’s visibility.</strong>
+<ul>
+<li>If it is <strong>private</strong>, create a GitHub fine-grained personal access token with <em>read-only Contents</em> access to this repository. You will paste it as the password when the Pi clones the repo.</li>
+<li>A public repo needs nothing.</li>
+</ul></li>
+<li><strong>Have these ready:</strong>
+<ul>
+<li><strong>The domain <code>grid-alert.com</code></strong> (registered). Step 6a puts it on Cloudflare if it isn’t already.</li>
+<li><strong>A Cloudflare account</strong> (free).</li>
+<li><strong>The email addresses of your pilot users.</strong></li>
+</ul></li>
+</ol>
+</section>
+<section id="hardware" class="level2">
+<h2 class="anchored" data-anchor-id="hardware">1. Hardware</h2>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Item</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Raspberry Pi 5, 4 GB or 8 GB</td>
+<td>4 GB is plenty</td>
+</tr>
+<tr class="even">
+<td>Official 27 W USB-C power supply</td>
+<td>Under-powered supplies cause random restarts</td>
+</tr>
+<tr class="odd">
+<td>Active Cooler (or a case with a fan)</td>
+<td>Keeps it cool when running 24/7</td>
+</tr>
+<tr class="even">
+<td>NVMe SSD + M.2 HAT+ (or a USB 3 SSD)</td>
+<td><strong>Use an SSD, not only a microSD card.</strong> Cards wear out under constant database writes.</td>
+</tr>
+<tr class="odd">
+<td>Ethernet cable</td>
+<td>Steadier than Wi-Fi for an always-on server</td>
+</tr>
+<tr class="even">
+<td>Optional: small UPS or UPS HAT</td>
+<td>Avoids gaps in history during short power cuts</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="install-the-operating-system" class="level2">
+<h2 class="anchored" data-anchor-id="install-the-operating-system">2. Install the operating system</h2>
+<ol type="1">
+<li>On your PC, install <strong>Raspberry Pi Imager</strong> (raspberrypi.com/software).</li>
+<li>Choose:
+<ul>
+<li><strong>Device:</strong> Raspberry Pi 5</li>
+<li><strong>OS:</strong> <em>Raspberry Pi OS (other) → Raspberry Pi OS <strong>Lite (64-bit)</strong></em></li>
+<li><strong>Storage:</strong> your SSD (in a USB adapter). If you can’t, use a microSD card for now.</li>
+</ul></li>
+<li>When asked, <strong>edit settings</strong>:
+<ul>
+<li>Hostname: <code>grid-alert-pi</code></li>
+<li>Username and password: your choice (written as <code>&lt;you&gt;</code> below)</li>
+<li>Wireless LAN: only if you can’t use Ethernet</li>
+<li>Locale: time zone <code>Australia/Melbourne</code></li>
+<li>Services tab: <strong>Enable SSH</strong> (password authentication)</li>
+</ul></li>
+<li>Write the image, fit the SSD to the Pi, connect Ethernet and power. Give it about 2 minutes on first boot.</li>
+<li>If the Pi doesn’t boot from the SSD (e.g.&nbsp;you flashed a microSD instead), you can move to the SSD later with <code>sudo raspi-config</code> → <em>Advanced Options</em> → <em>Boot Order</em>.</li>
+</ol>
+</section>
+<section id="connect-and-prepare-the-pi" class="level2">
+<h2 class="anchored" data-anchor-id="connect-and-prepare-the-pi">3. Connect and prepare the Pi</h2>
+<p>From your PC, in PowerShell or a terminal:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode sh code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ssh</span> <span class="op">&lt;</span>you<span class="op">&gt;</span>@grid-alert-pi.local</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>(If <code>grid-alert-pi.local</code> isn’t found, use the Pi’s IP address from your router’s device list.)</p>
+<p>Then, on the Pi:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode sh code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Update everything</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">sudo</span> apt update <span class="kw">&amp;&amp;</span> <span class="fu">sudo</span> apt full-upgrade <span class="at">-y</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Install git, Docker and automatic security updates</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="fu">sudo</span> apt install <span class="at">-y</span> git unattended-upgrades</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-fsSL</span> https://get.docker.com <span class="kw">|</span> <span class="fu">sudo</span> sh</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="fu">sudo</span> usermod <span class="at">-aG</span> docker <span class="va">$USER</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="co"># Log out and back in so the docker group applies</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="bu">exit</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode sh code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ssh</span> <span class="op">&lt;</span>you<span class="op">&gt;</span>@grid-alert-pi.local</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">--rm</span> hello-world     <span class="co"># should print "Hello from Docker!"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="download-the-app-and-start-it-local-only" class="level2">
+<h2 class="anchored" data-anchor-id="download-the-app-and-start-it-local-only">4. Download the app and start it (local only)</h2>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode sh code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> ~</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/RPBatchelor/grid-alert.git</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> grid-alert</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="fu">mkdir</span> <span class="at">-p</span> data           <span class="co"># create the history folder as your user (the app runs as UID 1000)</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="fu">cp</span> .env.example .env    <span class="co"># settings; the tunnel token goes in here later</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">GIT_COMMIT</span><span class="op">=</span><span class="va">$(</span><span class="fu">git</span> rev-parse <span class="at">--short</span> HEAD<span class="va">)</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> compose up <span class="at">-d</span> <span class="at">--build</span> app    <span class="co"># first build takes ~5–10 minutes on a Pi 5</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Check it:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode sh code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ex">curl</span> http://localhost:8080/api/health</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="co"># {"ok":true,"uptimeSeconds":…,"lastSnapshot":"…",…}</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> compose ps        <span class="co"># grid-alert-app should show "healthy" after ~2 minutes</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>From a PC on the same network, open <strong>http://grid-alert-pi.local:8080</strong>. You should see the live map.</p>
+</section>
+<section id="bring-across-the-history-you-already-have-optional" class="level2">
+<h2 class="anchored" data-anchor-id="bring-across-the-history-you-already-have-optional">5. Bring across the history you already have (optional)</h2>
+<p>The history recorded on your PC since 25 October can continue on the Pi.</p>
+<ol type="1">
+<li><p><strong>On your PC</strong>, in the project folder, make a clean single-file copy. It folds in any pending writes, so it is safe to run even if the dev server is still running:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode powershell code-with-copy"><code class="sourceCode powershell"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>node <span class="op">-</span>e <span class="st">"new (require('node:sqlite').DatabaseSync)('data/history.sqlite').exec(\"</span>VACUUM INTO <span class="st">'data/history-export.sqlite'</span>\<span class="st">")"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+<li><p><strong>On the Pi</strong>, stop the app:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode sh code-with-copy"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> ~/grid-alert <span class="kw">&amp;&amp;</span> <span class="ex">docker</span> compose stop app</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+<li><p><strong>On your PC</strong>, copy the file over:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode powershell code-with-copy"><code class="sourceCode powershell"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>scp <span class="kw">data</span><span class="op">/</span>history-export<span class="op">.</span><span class="fu">sqlite</span> <span class="op">&lt;</span>you<span class="op">&gt;</span>@grid-alert-pi<span class="op">.</span><span class="fu">local</span><span class="op">:~/</span>grid-alert<span class="op">/</span><span class="kw">data</span><span class="op">/</span><span class="fu">history</span><span class="op">.</span><span class="fu">sqlite</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+<li><p><strong>On the Pi</strong>, remove the new database’s leftover files and start again:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode sh code-with-copy"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">rm</span> <span class="at">-f</span> data/history.sqlite-wal data/history.sqlite-shm</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> compose start app</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+</ol>
+<p>Your existing events and Trends history now show on the Pi.</p>
+</section>
+<section id="secure-public-access-with-cloudflare" class="level2">
+<h2 class="anchored" data-anchor-id="secure-public-access-with-cloudflare">6. Secure public access with Cloudflare</h2>
+<p>Do these in order. The sign-in is created <strong>before</strong> the address goes live, so the app is never exposed without it.</p>
+<section id="a.-put-your-domain-on-cloudflare" class="level3">
+<h3 class="anchored" data-anchor-id="a.-put-your-domain-on-cloudflare">6a. Put your domain on Cloudflare</h3>
+<ul>
+<li>Bought through Cloudflare: nothing to do.</li>
+<li>Bought elsewhere: in Cloudflare, add the site (Free plan), then change your registrar’s nameservers to the two Cloudflare gives you. This can take up to a few hours.</li>
+</ul>
+</section>
+<section id="b.-set-up-zero-trust-one-off" class="level3">
+<h3 class="anchored" data-anchor-id="b.-set-up-zero-trust-one-off">6b. Set up Zero Trust (one-off)</h3>
+<ol type="1">
+<li>Open <strong>one.dash.cloudflare.com</strong>.</li>
+<li>Choose a team name and the <strong>Free</strong> plan. It may ask for a payment card even on the free plan.</li>
+</ol>
+</section>
+<section id="c.-create-the-sign-in-access-application" class="level3">
+<h3 class="anchored" data-anchor-id="c.-create-the-sign-in-access-application">6c. Create the sign-in (Access application)</h3>
+<ol type="1">
+<li>Go to <strong>Access → Applications → Add an application → Self-hosted</strong>.</li>
+<li>Application name: <code>Grid Alert Victoria</code>.</li>
+<li>Public hostname: leave <strong>subdomain blank</strong>, domain <code>grid-alert.com</code>. (Optionally add a second hostname <code>www</code> · <code>grid-alert.com</code> so both addresses are protected.)</li>
+<li>Session duration: <code>24 hours</code>. Choose a shorter one if you prefer.</li>
+<li>Add a policy:
+<ul>
+<li>Name: <code>Pilot users</code></li>
+<li>Action: <strong>Allow</strong></li>
+<li>Include → <strong>Emails</strong> → add each pilot user’s email address</li>
+</ul></li>
+<li>Login methods: <strong>One-time PIN</strong>, which is on by default. Users get a code by email. You can add Google or Microsoft sign-in later.</li>
+<li>Save.</li>
+</ol>
+</section>
+<section id="d.-create-the-tunnel" class="level3">
+<h3 class="anchored" data-anchor-id="d.-create-the-tunnel">6d. Create the tunnel</h3>
+<ol type="1">
+<li><p>Go to <strong>Networks → Tunnels → Create a tunnel</strong>.</p></li>
+<li><p>Choose <strong>Cloudflared</strong>, name it <code>grid-alert-pi</code>, and save.</p></li>
+<li><p>On the install screen choose <strong>Docker</strong>. Copy <strong>only the long token</strong> after <code>--token</code> in the command shown. Don’t run that command.</p></li>
+<li><p>On the Pi:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode sh code-with-copy"><code class="sourceCode bash"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">nano</span> .env        <span class="co"># paste after TUNNEL_TOKEN=   then Ctrl+O, Enter, Ctrl+X</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+<li><p>Back in Cloudflare, on the tunnel’s <strong>Public hostnames</strong> tab, add:</p>
+<ul>
+<li>Subdomain <strong>blank</strong>, domain <code>grid-alert.com</code></li>
+<li>If Cloudflare says a DNS record already exists for <code>grid-alert.com</code> (e.g.&nbsp;the registrar’s parking page), delete that record under the domain’s <strong>DNS → Records</strong>, then add the hostname again.</li>
+<li>Service type <strong>HTTP</strong>, URL <strong><code>app:8080</code></strong>. <code>app</code> is the container’s name inside Docker, not <code>localhost</code>.</li>
+</ul></li>
+<li><p>Save.</p></li>
+</ol>
+</section>
+<section id="e.-start-the-tunnel" class="level3">
+<h3 class="anchored" data-anchor-id="e.-start-the-tunnel">6e. Start the tunnel</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode sh code-with-copy"><code class="sourceCode bash"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> compose up <span class="at">-d</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> compose logs tunnel <span class="kw">|</span> <span class="fu">tail</span> <span class="at">-5</span>     <span class="co"># look for "Registered tunnel connection"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The tunnel’s status in the Cloudflare dashboard should show <strong>Healthy</strong>.</p>
+</section>
+</section>
+<section id="test-it-like-a-user" class="level2">
+<h2 class="anchored" data-anchor-id="test-it-like-a-user">7. Test it like a user</h2>
+<ol type="1">
+<li><p>On your phone, <strong>turn off Wi-Fi</strong> and open <code>https://grid-alert.com</code>.</p></li>
+<li><p>Expect Cloudflare’s sign-in page. Enter a pilot email, then type the code that arrives by email. The map loads.</p></li>
+<li><p>Try an email that is <strong>not</strong> on the list. It should be refused.</p></li>
+<li><p>Start and stop a test event, then check the Pi records who did it:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode sh code-with-copy"><code class="sourceCode bash"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> compose logs app <span class="kw">|</span> <span class="fu">grep</span> AUDIT</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+<li><p>Reboot the Pi (<code>sudo reboot</code>). After about 2 minutes the site comes back by itself.</p></li>
+</ol>
+<p>Once this works you can close the local-network shortcut. Delete the two <code>ports:</code> lines in <code>docker-compose.yml</code>, then run <code>docker compose up -d</code>. Afterwards everyone, you included, goes through the sign-in.</p>
+</section>
+<section id="optional-get-an-alert-if-it-stops-recording" class="level2">
+<h2 class="anchored" data-anchor-id="optional-get-an-alert-if-it-stops-recording">8. Optional: get an alert if it stops recording</h2>
+<p>Use a free uptime monitor (e.g.&nbsp;UptimeRobot) on the health check. It must be reachable without signing in:</p>
+<ol type="1">
+<li>In Cloudflare <strong>Access → Applications</strong>, add another <strong>Self-hosted</strong> app for <code>grid-alert.com</code> with <strong>path</strong> <code>api/health</code>. Give it a policy with Action <strong>Bypass</strong> and Include <strong>Everyone</strong>. The health check shows only uptime and the last snapshot time.</li>
+<li>In UptimeRobot, add a <strong>Keyword</strong> monitor for <code>https://grid-alert.com/api/health</code> with keyword <code>"ok":true</code>, checked every 5 minutes, alerting your email.</li>
+</ol>
+<p><code>"ok"</code> turns false if no snapshot has been recorded for 15 minutes, which catches a stuck collector as well as a dead Pi.</p>
+</section>
+<section id="day-to-day" class="level2">
+<h2 class="anchored" data-anchor-id="day-to-day">Day-to-day</h2>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Task</th>
+<th>Command (on the Pi, in <code>~/grid-alert</code>)</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Is it healthy?</td>
+<td><code>docker compose ps</code> and <code>curl localhost:8080/api/health</code></td>
+</tr>
+<tr class="even">
+<td>Live logs</td>
+<td><code>docker compose logs -f app</code></td>
+</tr>
+<tr class="odd">
+<td>Who changed events</td>
+<td><code>docker compose logs app \| grep AUDIT</code></td>
+</tr>
+<tr class="even">
+<td>Update to the latest code</td>
+<td><code>sh scripts/pi-update.sh</code></td>
+</tr>
+<tr class="odd">
+<td>Restart</td>
+<td><code>docker compose restart</code></td>
+</tr>
+<tr class="even">
+<td>Add or remove pilot users</td>
+<td>Cloudflare → Access → Applications → the app → Policies</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Backups:</strong></p>
+<ul>
+<li><p><strong>On the Pi:</strong> a copy of the history is written to <code>data/backups/</code> every day, and the last 14 are kept.</p></li>
+<li><p><strong>Off the Pi:</strong> these copies sit on the same disk, so copy one off regularly, e.g.&nbsp;weekly from your PC:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode powershell code-with-copy"><code class="sourceCode powershell"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>scp <span class="op">&lt;</span>you<span class="op">&gt;</span>@grid-alert-pi<span class="op">.</span><span class="fu">local</span><span class="op">:~/</span>grid-alert<span class="op">/</span><span class="kw">data</span><span class="op">/</span>backups<span class="op">/*</span> D<span class="op">:</span>\backups\grid-alert\</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+<li><p><strong>To restore:</strong></p>
+<ul>
+<li><code>docker compose stop app</code></li>
+<li>copy the backup over <code>data/history.sqlite</code> and delete the <code>-wal</code> and <code>-shm</code> files</li>
+<li><code>docker compose start app</code></li>
+</ul></li>
+</ul>
+<p><strong>Windy:</strong> if you buy a Windy Map Forecast API key, add <code>grid-alert.com</code> to the key’s allowed domains at api.windy.com, then enter the key in Settings → Integrations.</p>
+</section>
+<section id="troubleshooting" class="level2">
+<h2 class="anchored" data-anchor-id="troubleshooting">Troubleshooting</h2>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Symptom</th>
+<th>Likely cause and fix</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>permission denied</code> on <code>/data</code> in <code>docker compose logs app</code></td>
+<td>The <code>data</code> folder was created by Docker as root. Run <code>sudo chown -R 1000:1000 data</code>, then <code>docker compose restart app</code>.</td>
+</tr>
+<tr class="even">
+<td>Build fails or is killed</td>
+<td>Out of memory on a 2 GB Pi. Close other apps or add swap: <code>sudo dphys-swapfile swapoff; sudo sed -i 's/CONF_SWAPSIZE=.*/CONF_SWAPSIZE=2048/' /etc/dphys-swapfile; sudo dphys-swapfile setup; sudo dphys-swapfile swapon</code>.</td>
+</tr>
+<tr class="odd">
+<td><code>grid-alert-app</code> shows <strong>unhealthy</strong></td>
+<td>Snapshots have stopped. Check <code>docker compose logs app</code> for “Collector fetch failed”, and check the Pi’s internet.</td>
+</tr>
+<tr class="even">
+<td>Tunnel shows <strong>Down</strong> in Cloudflare</td>
+<td>Check <code>docker compose logs tunnel</code>. Usually a wrong or empty <code>TUNNEL_TOKEN</code> in <code>.env</code>. Fix it, then <code>docker compose up -d</code>.</td>
+</tr>
+<tr class="odd">
+<td>Cloudflare error 502 or 1033</td>
+<td>The public hostname’s service must be <code>http://app:8080</code>, not <code>localhost</code>.</td>
+</tr>
+<tr class="even">
+<td>Sign-in code never arrives</td>
+<td>Check spam. The email must be listed in the Access policy exactly.</td>
+</tr>
+<tr class="odd">
+<td>Times look wrong</td>
+<td>Run <code>timedatectl</code> on the Pi and set <code>Australia/Melbourne</code> with <code>sudo timedatectl set-timezone Australia/Melbourne</code>.</td>
+</tr>
+<tr class="even">
+<td>Gaps in Trends</td>
+<td>The Pi or the internet was down. Gaps are expected and shown honestly. A UPS reduces them.</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="limits-of-this-setup-pilot-only" class="level2">
+<h2 class="anchored" data-anchor-id="limits-of-this-setup-pilot-only">Limits of this setup (pilot only)</h2>
+<ul>
+<li><strong>Single point of failure.</strong> It depends on one Pi, home or office power, and an internet connection.</li>
+<li><strong>Your equipment and accounts.</strong> It runs on hardware and accounts you own, not AusNet IT. Agree this with your manager and Technology before sharing it beyond a small pilot group.</li>
+<li><strong>Access is by email list, not AusNet sign-in.</strong> Remove people from the policy when they leave the pilot.</li>
+<li><strong>Moving to company hosting later is easy.</strong> The same container runs unchanged on AWS or other company hosting.</li>
+</ul>
+</section>
+</section>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
