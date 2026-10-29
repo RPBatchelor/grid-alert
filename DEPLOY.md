@@ -200,7 +200,7 @@ It sends them from `noreply@grid-alert.com` through Resend.
    ```
 
 Until this is done the app still works: emails are written to the log
-(`docker compose logs app | grep MAIL`), and Settings → Users shows each set-password link with
+(`docker compose logs app | grep MAIL`), and Admin → Users shows each set-password link with
 a **Copy** button so you can send it yourself.
 
 ## 7. Public access with Cloudflare Tunnel
@@ -245,7 +245,7 @@ The tunnel's status in the Cloudflare dashboard should show **Healthy**.
 1. On your phone, **turn off Wi-Fi** and open `https://grid-alert.com`. Expect the Grid Alert sign-in page.
 2. Sign in as yourself. The map loads.
 3. **Request access** from another email address (a personal one works). Within a minute you should get an "Access request" email.
-4. In the app, open **Settings → Users** (the email's button goes straight there). Approve the request as **Viewer**.
+4. In the app, open **Admin → Users** (the email's button goes straight there). Approve the request as **Viewer**.
 5. The other address gets an "Access approved" email. Set a password from it, and you're signed in as that user.
 6. As a viewer there is no **Start event** button. Sign out using the button at the foot of the sidebar (expand the sidebar first).
 7. Start and stop a test event as yourself, then check the Pi records who did it:
@@ -275,8 +275,11 @@ collector as well as a dead Pi.
 | Who changed events | `docker compose logs app \| grep AUDIT` |
 | Update to the latest code | `sh scripts/pi-update.sh` |
 | Restart | `docker compose restart` |
-| Approve requests, change roles, disable someone | In the app: **Settings → Users** (admins only) |
-| Invite someone directly | **Settings → Users → Invite someone** |
+| Approve requests, change roles, disable someone | In the app: **Admin → Users** (admins only) |
+| Invite someone directly | **Admin → Users → Invite someone** |
+| Remove someone, or sign them out everywhere | **Admin → Users** (Remove deletes the account and its usage history) |
+| Who's using it, dormant accounts | **Admin → Usage** |
+| Database size, gaps in the history, backups, integrity check | **Admin → Database** |
 | Who changed things / emails sent | `docker compose logs app \| grep -E "AUDIT\|MAIL"` |
 
 **Roles:**
@@ -313,7 +316,7 @@ allowed domains at api.windy.com, then enter the key in Settings → Integration
 | `grid-alert-app` shows **unhealthy** | Snapshots have stopped. Check `docker compose logs app` for "Collector fetch failed", and check the Pi's internet. |
 | Tunnel shows **Down** in Cloudflare | Check `docker compose logs tunnel`. Usually a wrong or empty `TUNNEL_TOKEN` in `.env`. Fix it, then `docker compose up -d`. |
 | Cloudflare error 502 or 1033 | The public hostname's service must be `http://app:8080`, not `localhost`. |
-| Emails never arrive | Check spam first. Then run `docker compose logs app \| grep MAIL`: "not sent" means `RESEND_API_KEY` is missing; "Resend HTTP 403" usually means the domain isn't verified yet. Meanwhile, copy links from Settings → Users. |
+| Emails never arrive | Check spam first. Then run `docker compose logs app \| grep MAIL`: "not sent" means `RESEND_API_KEY` is missing; "Resend HTTP 403" usually means the domain isn't verified yet. Meanwhile, copy links from Admin → Users. |
 | Locked out of your admin account | Use **Forgot password?** on the sign-in page. If email isn't working, the link is in `docker compose logs app \| grep MAIL`. |
 | "Too many attempts" | Sign-in allows 8 tries per email in 15 minutes. Wait, then try again (or restart the app). |
 | Times look wrong | Run `timedatectl` on the Pi and set `Australia/Melbourne` with `sudo timedatectl set-timezone Australia/Melbourne`. |
@@ -323,5 +326,5 @@ allowed domains at api.windy.com, then enter the key in Settings → Integration
 
 - **Single point of failure.** It depends on one Pi, home or office power, and an internet connection.
 - **Your equipment and accounts.** It runs on hardware and accounts you own, not AusNet IT. Agree this with your manager and Technology before sharing it beyond a small pilot group.
-- **Accounts are local to this app, not AusNet single sign-on.** Disable people in Settings → Users when they leave the pilot. There is no two-factor sign-in, so use strong passwords and keep the user list tidy.
+- **Accounts are local to this app, not AusNet single sign-on.** Disable people in Admin → Users when they leave the pilot. There is no two-factor sign-in, so use strong passwords and keep the user list tidy.
 - **Moving to company hosting later is easy.** The same container runs unchanged on AWS or other company hosting.

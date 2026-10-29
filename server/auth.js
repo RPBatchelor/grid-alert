@@ -7,7 +7,7 @@
 //   SHA-256 is stored. Set-password links are single-use and expire after 48 hours.
 // - The first admin is created from ADMIN_EMAIL / ADMIN_PASSWORD on start-up if no admin exists.
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import { open } from "./history.js";
+import { databaseStats, integrityCheck, open } from "./history.js";
 import { escapeHtml, sendMail } from "./mail.js";
 
 export const ROLES = ["viewer", "operator", "admin"];
@@ -65,6 +65,18 @@ function db() {
         expires_at INTEGER NOT NULL,
         used_at INTEGER
       );
+      -- Usage statistics for the admin page: one row per sign-in, and the Melbourne days on
+      -- which each person used the app.
+      CREATE TABLE IF NOT EXISTS logins (
+        user_id INTEGER NOT NULL REFERENCES users (id),
+        ts INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS logins_ts ON logins (ts);
+      CREATE TABLE IF NOT EXISTS user_activity (
+        user_id INTEGER NOT NULL REFERENCES users (id),
+        day TEXT NOT NULL,                          -- yyyy-mm-dd, Melbourne
+        PRIMARY KEY (user_id, day)
+      );
     `);
     ready = true;
   }
@@ -77,6 +89,8 @@ const sha256 = (s) => createHash("sha256").update(s).digest("hex");
 const newToken = () => randomBytes(32).toString("base64url");
 const normEmail = (e) => String(e ?? "").trim().toLowerCase();
 const validEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) && e.length <= 254;
+const melbourneDay = (ts) => new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Melbourne" }).format(new Date(ts));
+const markActive = (userId, ts) => db().prepare("INSERT OR IGNORE INTO user_activity (user_id, day) VALUES (?, ?)").run(userId, melbourneDay(ts));
 
 function hashPassword(password) {
   const salt = randomBytes(16);
@@ -135,6 +149,8 @@ function createSession(userId) {
   const now = Date.now();
   db().prepare("INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen) VALUES (?, ?, ?, ?, ?)").run(sha256(token), userId, now, now + SESSION_DAYS * 86400e3, now);
   db().prepare("UPDATE users SET last_login = ? WHERE id = ?").run(now, userId);
+  db().prepare("INSERT INTO logins (user_id, ts) VALUES (?, ?)").run(userId, now);
+  markActive(userId, now);
   return token;
 }
 
@@ -146,7 +162,10 @@ export function sessionUser(req) {
     .prepare("SELECT u.*, s.last_seen AS s_last_seen, s.token_hash FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ? AND u.status = 'active'")
     .get(sha256(token), Date.now());
   if (!row) return null;
-  if (Date.now() - row.s_last_seen > 5 * 60000) db().prepare("UPDATE sessions SET last_seen = ? WHERE token_hash = ?").run(Date.now(), row.token_hash);
+  if (Date.now() - row.s_last_seen > 5 * 60000) {
+    db().prepare("UPDATE sessions SET last_seen = ? WHERE token_hash = ?").run(Date.now(), row.token_hash);
+    markActive(row.id, Date.now());
+  }
   return row;
 }
 
@@ -246,7 +265,7 @@ async function requestAccess(req, body) {
           reason ? `“${escapeHtml(reason)}”` : "No reason given.",
           "Approve or decline in Settings → Users.",
         ],
-        button: { label: "Review request", url: `${appUrl(req)}/?settings=users` },
+        button: { label: "Review request", url: `${appUrl(req)}/?admin=users` },
       });
     }
   }
@@ -278,9 +297,40 @@ function setPassword(req, body) {
 // ---- Admin ------------------------------------------------------------------------------
 
 function listAdmin() {
+  const since = Date.now() - 30 * 86400e3;
   return {
     requests: db().prepare("SELECT * FROM access_requests WHERE status = 'pending' ORDER BY created_at").all(),
-    users: db().prepare("SELECT id, email, name, organisation, role, status, created_at, last_login, password_hash IS NOT NULL AS has_password FROM users ORDER BY role = 'admin' DESC, name").all(),
+    users: db()
+      .prepare(
+        `SELECT u.id, u.email, u.name, u.organisation, u.role, u.status, u.created_at, u.last_login, u.password_hash IS NOT NULL AS has_password,
+           (SELECT MAX(last_seen) FROM sessions WHERE user_id = u.id) AS last_seen,
+           (SELECT COUNT(*) FROM sessions WHERE user_id = u.id AND expires_at > ?) AS sessions,
+           (SELECT COUNT(*) FROM logins WHERE user_id = u.id AND ts >= ?) AS logins_30d,
+           (SELECT COUNT(*) FROM user_activity WHERE user_id = u.id AND day >= ?) AS active_days_30d
+         FROM users u ORDER BY u.role = 'admin' DESC, u.name`,
+      )
+      .all(Date.now(), since, melbourneDay(since)),
+  };
+}
+
+// Daily active people and sign-ins for the last 30 days, plus the most recent sign-ins.
+function usage() {
+  const days = [];
+  for (let i = 29; i >= 0; i--) days.push(melbourneDay(Date.now() - i * 86400e3));
+  const active = Object.fromEntries(db().prepare("SELECT day, COUNT(*) AS n FROM user_activity WHERE day >= ? GROUP BY day").all(days[0]).map((r) => [r.day, r.n]));
+  const signIns = {};
+  for (const { ts } of db().prepare("SELECT ts FROM logins WHERE ts >= ?").all(Date.now() - 31 * 86400e3)) {
+    const day = melbourneDay(ts);
+    signIns[day] = (signIns[day] ?? 0) + 1;
+  }
+  const distinct = (fromDay) => db().prepare("SELECT COUNT(DISTINCT user_id) AS n FROM user_activity WHERE day >= ?").get(fromDay).n;
+  return {
+    days: days.map((day) => ({ day, active: active[day] ?? 0, signIns: signIns[day] ?? 0 })),
+    activeToday: distinct(days.at(-1)),
+    active7d: distinct(days.at(-7)),
+    active30d: distinct(days[0]),
+    trackingSince: db().prepare("SELECT MIN(ts) AS ts FROM logins").get().ts,
+    recentSignIns: db().prepare("SELECT l.ts, u.id AS user_id, u.name, u.email FROM logins l JOIN users u ON u.id = l.user_id ORDER BY l.ts DESC LIMIT 50").all(),
   };
 }
 
@@ -327,6 +377,31 @@ function updateUser(admin, id, body) {
   return { ok: true };
 }
 
+function signOutUser(id) {
+  if (!db().prepare("SELECT 1 FROM users WHERE id = ?").get(id)) throw new AuthError(404, "User not found.");
+  const { changes } = db().prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
+  return { ok: true, sessions: changes };
+}
+
+// Removes the account and everything tied to it (sessions, links, usage history, requests).
+function deleteUser(admin, id) {
+  const user = db().prepare("SELECT * FROM users WHERE id = ?").get(id);
+  if (!user) throw new AuthError(404, "User not found.");
+  if (user.id === admin.id) throw new AuthError(400, "You can’t remove your own account.");
+  const d = db();
+  d.exec("BEGIN");
+  try {
+    for (const table of ["sessions", "auth_tokens", "logins", "user_activity"]) d.prepare(`DELETE FROM ${table} WHERE user_id = ?`).run(id);
+    d.prepare("DELETE FROM access_requests WHERE email = ?").run(user.email);
+    d.prepare("DELETE FROM users WHERE id = ?").run(id);
+    d.exec("COMMIT");
+  } catch (error) {
+    d.exec("ROLLBACK");
+    throw error;
+  }
+  return { ok: true, name: user.email };
+}
+
 async function resetUser(req, id) {
   const user = db().prepare("SELECT * FROM users WHERE id = ? AND status = 'active'").get(id);
   if (!user) throw new AuthError(404, "User not found or disabled.");
@@ -368,6 +443,11 @@ export async function authRoutes(req, res, url, body, send) {
     if ((mm = path.match(/^\/api\/admin\/requests\/(\d+)\/decline$/)) && m === "POST") return send(200, await declineRequest(admin, +mm[1], body));
     if ((mm = path.match(/^\/api\/admin\/users\/(\d+)$/)) && m === "PATCH") return send(200, updateUser(admin, +mm[1], body));
     if ((mm = path.match(/^\/api\/admin\/users\/(\d+)\/reset$/)) && m === "POST") return send(200, await resetUser(req, +mm[1]));
+    if ((mm = path.match(/^\/api\/admin\/users\/(\d+)\/signout$/)) && m === "POST") return send(200, signOutUser(+mm[1]));
+    if ((mm = path.match(/^\/api\/admin\/users\/(\d+)$/)) && m === "DELETE") return send(200, deleteUser(admin, +mm[1]));
+    if (path === "/api/admin/usage" && m === "GET") return send(200, usage());
+    if (path === "/api/admin/database" && m === "GET") return send(200, databaseStats({ intervalMinutes: Number(process.env.COLLECT_INTERVAL_MINUTES ?? 5) }));
+    if (path === "/api/admin/database/check" && m === "POST") return send(200, integrityCheck());
   }
   throw new AuthError(404, "Not found.");
 }
@@ -390,6 +470,7 @@ export function pageGate(req, res) {
     return "login";
   }
   const isPage = p === "/" || p === "/index.html" || !/\.[a-z0-9]+$/i.test(p);
-  if (isPage && !sessionUser(req)) return redirect("/login");
+  // Keep where they were going (e.g. the admin email's /?admin=users) for after sign-in.
+  if (isPage && !sessionUser(req)) return redirect(p === "/" && !url.search ? "/login" : `/login?next=${encodeURIComponent(p + url.search)}`);
   return "app";
 }

@@ -240,6 +240,104 @@
       </div>
     </main>
 
+    <main id="admin" class="page admin-page" hidden aria-label="Admin">
+      <div class="trends-inner">
+        <div class="ev-head">
+          <div>
+            <h1>Admin</h1>
+            <p class="ev-sub">Who has access, how the app is being used, and the health of the outage history database.</p>
+          </div>
+          <div class="seg tr-seg" id="admin-tabs" role="tablist" aria-label="Admin sections">
+            <button type="button" role="tab" data-admin-tab="users">Users <span class="tag users-count" id="users-request-count" hidden></span></button>
+            <button type="button" role="tab" data-admin-tab="usage">Usage</button>
+            <button type="button" role="tab" data-admin-tab="database">Database</button>
+          </div>
+        </div>
+
+        <!-- Users -->
+        <div data-admin="users" role="tabpanel">
+          <div class="users-link" id="users-link" hidden role="status"></div>
+          <section class="tr-card">
+            <div class="tr-card-head"><h2>Access requests</h2></div>
+            <p class="tr-note admin-help">People who asked for access on the sign-in page. Approving emails them a link to set a password.</p>
+            <div class="req-list" id="users-requests"><div class="empty">Loading…</div></div>
+          </section>
+          <section class="tr-card">
+            <div class="tr-card-head"><h2>People with access</h2><span class="tag" id="users-total"></span></div>
+            <p class="tr-note admin-help"><b>Viewer</b> can see everything. <b>Operator</b> can also start, stop and edit events. <b>Admin</b> can also manage users. <b>Disable</b> blocks sign-in but keeps the account; <b>Remove</b> deletes it and its usage history.</p>
+            <div class="users-table-wrap">
+              <table class="users-table" id="users-table">
+                <thead><tr><th>Person</th><th>Role</th><th>Last sign-in</th><th>Last active</th><th class="num">Sign-ins (30 d)</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+          <section class="tr-card">
+            <div class="tr-card-head"><h2>Invite someone</h2></div>
+            <p class="tr-note admin-help">Creates the account straight away and emails a link to set a password.</p>
+            <form class="users-invite" id="users-invite">
+              <input name="name" placeholder="Name" maxlength="120" aria-label="Name" />
+              <input name="email" type="email" placeholder="Email" required aria-label="Email" />
+              <select class="user-invite-role"></select>
+              <button type="submit" class="btn small primary">Invite</button>
+            </form>
+          </section>
+        </div>
+
+        <!-- Usage -->
+        <div data-admin="usage" role="tabpanel" hidden>
+          <div class="tr-tiles" id="usage-tiles"></div>
+          <section class="tr-card">
+            <div class="tr-card-head"><h2>Daily activity · last 30 days</h2></div>
+            <div class="day-bars" id="usage-days"></div>
+            <p class="tr-note" id="usage-note"></p>
+          </section>
+          <div class="admin-cols">
+            <section class="tr-card">
+              <div class="tr-card-head"><h2>People by last activity</h2></div>
+              <div class="tr-table-wrap"><table class="tr-table" id="usage-people"></table></div>
+            </section>
+            <section class="tr-card">
+              <div class="tr-card-head"><h2>Recent sign-ins</h2></div>
+              <div class="tr-table-wrap"><table class="tr-table" id="usage-signins"></table></div>
+            </section>
+          </div>
+        </div>
+
+        <!-- Database -->
+        <div data-admin="database" role="tabpanel" hidden>
+          <div class="tr-tiles" id="db-tiles"></div>
+          <section class="tr-card">
+            <div class="tr-card-head"><h2>Recording coverage · last 30 days</h2></div>
+            <div class="day-bars" id="db-days"></div>
+            <p class="tr-note" id="db-days-note"></p>
+          </section>
+          <section class="tr-card">
+            <div class="tr-card-head"><h2>Gaps in the timeline</h2><span class="tag" id="db-gap-count"></span></div>
+            <p class="tr-note admin-help" id="db-gap-note"></p>
+            <div class="tr-table-wrap"><table class="tr-table" id="db-gaps"></table></div>
+          </section>
+          <section class="tr-card">
+            <div class="tr-card-head"><h2>Network feed gaps · last 30 days</h2></div>
+            <p class="tr-note admin-help">Snapshots where a distributor's tracker couldn't be read. Those snapshots have no figures for that network (a gap, not zero customers).</p>
+            <div class="tr-table-wrap"><table class="tr-table" id="db-feeds"></table></div>
+          </section>
+          <div class="admin-cols">
+            <section class="tr-card">
+              <div class="tr-card-head"><h2>Tables</h2></div>
+              <div class="tr-table-wrap"><table class="tr-table" id="db-tables"></table></div>
+            </section>
+            <section class="tr-card">
+              <div class="tr-card-head"><h2>Storage &amp; backups</h2><button type="button" class="btn small" id="db-check">Run integrity check</button></div>
+              <div class="status-line" id="db-check-result" hidden></div>
+              <dl class="admin-facts" id="db-storage"></dl>
+              <div class="tr-table-wrap"><table class="tr-table" id="db-backups"></table></div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </main>
+
     <div id="callout-dock" aria-label="Strongest wind callouts"><svg id="callout-leaders" aria-hidden="true"></svg></div>
 
     <header class="app-brand" aria-label="Grid Alert Victoria">
@@ -250,16 +348,17 @@
         <div class="brand-name">Grid Alert Victoria</div>
         <div class="brand-sub">Weather × Outages</div>
       </div>
-      <button class="sb-icon-btn" id="sb-pin" type="button" aria-pressed="false" title="Pin sidebar open"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 4h6l-1 6 3 3H7l3-3-1-6Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /><path d="M12 13v7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /></svg></button>
     </header>
 
     <nav class="sidebar" id="sidebar" aria-label="Main">
+      <div class="sb-top"><button class="sb-icon-btn sb-collapse" id="sb-toggle" type="button" aria-controls="sidebar" aria-expanded="false" title="Expand sidebar"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m15 7-5 5 5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /><path d="M5 4v16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg></button></div>
       <div class="sb-scroll">
         <div class="sb-group">
           <div class="sb-heading sb-label">Pages</div>
           <button class="sb-item" type="button" data-view="map" title="Map"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m3 6 6-2 6 2 6-2v14l-6 2-6-2-6 2V6Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /><path d="M9 4v14m6-12v14" stroke="currentColor" stroke-width="1.7" /></svg><span class="sb-label">Map<small>Live outages, weather and network areas</small></span></button>
           <button class="sb-item" type="button" data-view="trends" title="Trends"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20h16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /><path d="M6 17v-4m4 4V9m4 8v-6m4 6V6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" /></svg><span class="sb-label">Trends<small>Outages over time and incident register</small></span></button>
           <button class="sb-item" type="button" data-view="events" title="Events"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 21V4h10l-1 4h6l-2 7h-8l1-4H5" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /></svg><span class="sb-label">Events<small>Start, stop and analyse major events</small></span></button>
+          <button class="sb-item" type="button" data-view="admin" id="sb-admin" title="Admin" hidden><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6l-7-3Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /><path d="m9 12 2 2 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></svg><span class="sb-badge" id="sb-admin-count" hidden></span><span class="sb-label">Admin<small>Users, usage and the database</small></span></button>
         </div>
 
         <div class="sb-group" id="sb-layers-group">
@@ -285,7 +384,7 @@
               </div>
               <div class="toggles">
                 <label><input type="checkbox" id="t-radar" /> Rain radar (observed) <span class="src-note">RainViewer</span></label>
-                <label><input type="checkbox" id="t-windcallouts" checked /> Strongest-wind callout boxes</label>
+                <label><input type="checkbox" id="t-windcallouts" /> Strongest-wind callout boxes</label>
               </div>
             </section>
 
@@ -330,12 +429,12 @@
       <div class="sb-foot">
         <div class="user-box" id="user-box" hidden></div>
         <button class="sb-item" type="button" id="settings-button" title="Settings"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" stroke="currentColor" stroke-width="1.8" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" stroke="currentColor" stroke-width="1.6" /></svg><span class="sb-label">Settings<small>Appearance, colours, data, integrations</small></span></button>
-        <button class="sb-item sb-expand" type="button" id="sb-toggle" title="Expand sidebar" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m10 7 5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /><path d="M4 4v16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg><span class="sb-label">Collapse sidebar</span></button>
       </div>
     </nav>
     <div class="sb-scrim" id="sb-scrim" hidden></div>
 
     <aside class="outputs" id="outputs" aria-label="Impact and intelligence">
+      <button class="out-mini" id="out-mini" type="button" title="Expand intelligence panel"></button>
       <section class="window" data-win="intel">
         <button class="win-head" type="button" aria-expanded="true">
           <span class="win-title">Automated intelligence</span><span class="tag" id="insight-count">—</span><svg class="win-chev" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
@@ -349,6 +448,7 @@
         <div class="win-body"><div class="net-panels" id="network-panels"></div></div>
       </section>
     </aside>
+    <button class="edge-toggle out-toggle" id="out-toggle" type="button" aria-controls="outputs" aria-expanded="true" title="Collapse intelligence panel"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 7 5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /><path d="M19 4v16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg><span class="tag" id="out-toggle-count" hidden></span></button>
 
     <div class="timebar" id="timebar">
       <button class="btn icon" id="play-button" type="button" aria-label="Play forecast">
@@ -419,10 +519,6 @@
           <button type="button" data-section="integrations">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 7V4m6 3V4M7 7h10v4a5 5 0 0 1-10 0V7Zm5 9v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
             Integrations
-          </button>
-          <button type="button" data-section="users" id="settings-nav-users" hidden>
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="9" cy="8" r="3.5" stroke="currentColor" stroke-width="1.8" /><path d="M2.5 20c.6-3.4 3.2-5.5 6.5-5.5s5.9 2.1 6.5 5.5M16 4.8a3.5 3.5 0 0 1 0 6.4M18.5 14.8c1.6.8 2.7 2.6 3 5.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
-            Users <span class="tag users-count" id="users-request-count" hidden></span>
           </button>
           <button type="button" data-section="about">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8" /><path d="M12 11v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /><circle cx="12" cy="8" r="1.1" fill="currentColor" /></svg>
@@ -512,36 +608,6 @@
               <h4>Outage history</h4>
               <p>The server stores a snapshot every few minutes while it runs (set with <code>COLLECT_INTERVAL_MINUTES</code>), shown in the Trends view.</p>
               <div class="status-line" id="history-stats">Loading…</div>
-            </div>
-          </section>
-
-          <section data-panel="users" aria-labelledby="su-title" hidden>
-            <h3 id="su-title">Users</h3>
-            <div class="users-link" id="users-link" hidden role="status"></div>
-            <div class="settings-group">
-              <h4>Access requests</h4>
-              <p>People who asked for access on the sign-in page. Approving emails them a link to set a password.</p>
-              <div class="req-list" id="users-requests"><div class="empty">Loading…</div></div>
-            </div>
-            <div class="settings-group">
-              <h4>People with access</h4>
-              <p><b>Viewer</b> can see everything. <b>Operator</b> can also start, stop and edit events. <b>Admin</b> can also manage users.</p>
-              <div class="users-table-wrap">
-                <table class="users-table" id="users-table">
-                  <thead><tr><th>Person</th><th>Role</th><th>Last sign-in</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
-                  <tbody></tbody>
-                </table>
-              </div>
-            </div>
-            <div class="settings-group">
-              <h4>Invite someone</h4>
-              <p>Creates the account straight away and emails a link to set a password.</p>
-              <form class="users-invite" id="users-invite">
-                <input name="name" placeholder="Name" maxlength="120" aria-label="Name" />
-                <input name="email" type="email" placeholder="Email" required aria-label="Email" />
-                <select class="user-invite-role"></select>
-                <button type="submit" class="btn small primary">Invite</button>
-              </form>
             </div>
           </section>
 

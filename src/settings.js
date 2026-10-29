@@ -88,6 +88,7 @@ export const HALO = "#0b1217"; // dark outline drawn under every network line
 // ---- Dialog -----------------------------------------------------------------------------
 
 function showSection(name) {
+  if (!document.querySelector(`.settings-nav [data-section="${name}"]`)) name = "general"; // e.g. a saved "users" (now on the Admin page)
   document.querySelectorAll(".settings-nav [data-section]").forEach((b) => {
     const on = b.dataset.section === name;
     b.classList.toggle("active", on);

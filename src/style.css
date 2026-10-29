@@ -50,6 +50,7 @@
   --rail: 60px; /* collapsed sidebar */
   --sb-open: 300px; /* expanded sidebar */
   --out-w: 340px; /* outputs column */
+  --out-mini-w: 190px; /* outputs column, collapsed to its summary strip */
   --brand-h: 56px; /* always-visible title block above the sidebar */
 }
 body { --left-w: calc(var(--rail) + 20px); --right-w: calc(var(--out-w) + 20px); }
@@ -447,6 +448,13 @@ dialog.settings::backdrop { background: var(--backdrop); backdrop-filter: blur(2
 .sb-icon-btn:hover { background: var(--hover); color: var(--text); }
 .sb-icon-btn svg { width: 17px; height: 17px; }
 .sb-icon-btn[aria-pressed="true"] { background: var(--accent-bg); color: var(--accent-ink); }
+/* Collapse/expand button: its own row at the top of the sidebar, centred over the icons in the
+   rail and at the top-right corner when expanded. */
+.sb-top { display: flex; justify-content: center; padding: 8px 10px 0; }
+.sb-open .sb-top, .sb-pinned .sb-top { justify-content: flex-end; }
+.sb-collapse { width: 40px; height: 34px; }
+.sb-collapse svg { width: 18px; height: 18px; transition: transform 0.18s; }
+body:not(.sb-open, .sb-pinned) .sb-collapse svg { transform: rotate(180deg); }
 .sb-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
 .sb-group { display: grid; gap: 2px; padding: 8px 10px 6px; }
 .sb-group[hidden] { display: none; }
@@ -462,9 +470,6 @@ dialog.settings::backdrop { background: var(--backdrop); backdrop-filter: blur(2
 .sb-panel { padding: 6px 4px 10px; }
 .sb-panel-head { display: flex; align-items: center; justify-content: space-between; margin: 2px 0 8px; color: var(--text-2); font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
 .sb-foot { display: grid; gap: 2px; padding: 8px 10px 10px; border-top: 1px solid var(--line); }
-.sb-expand > svg { transition: transform 0.18s; }
-.sb-open .sb-expand > svg, .sb-pinned .sb-expand > svg { transform: rotate(180deg); }
-.sb-pinned .sb-expand { display: none; }
 
 /* ---- Right outputs column: collapsible windows ---- */
 .outputs { position: fixed; z-index: 900; top: 72px; bottom: 20px; right: 10px; display: flex; flex-direction: column; gap: 8px; width: var(--out-w); }
@@ -485,10 +490,41 @@ dialog.settings::backdrop { background: var(--backdrop); backdrop-filter: blur(2
 .net-panels { display: flex; flex-direction: column; gap: 8px; }
 .net-panels .net-panel { background: var(--surface); backdrop-filter: none; }
 
+/* Collapse/expand tab on the inner edge of the outputs column (the sidebar's is .sb-collapse).
+   The arrow points towards the screen edge while the panel is open, away from it when collapsed. */
+.edge-toggle { position: fixed; display: flex; align-items: center; gap: 6px; height: 34px; min-width: 34px; padding: 0 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); backdrop-filter: blur(8px); box-shadow: var(--shadow); color: var(--muted); }
+.edge-toggle:hover { background: var(--hover); color: var(--text); }
+.edge-toggle svg { width: 17px; height: 17px; transition: transform 0.18s; }
+
+/* Outputs column: collapsed, it narrows to a summary strip (network, customers off) and the
+   tab shows the active-alert count. */
+.out-toggle { z-index: 901; top: 72px; right: calc(var(--out-w) + 18px); transition: right 0.18s ease; }
+.out-toggle .tag { display: none; }
+.windy-mode .out-toggle { right: calc(var(--out-w) + 78px); }
+.view-page .out-toggle { display: none; }
+.out-mini { display: none; }
+body.out-collapsed { --right-w: calc(var(--out-mini-w) + 20px); }
+body.out-collapsed.windy-mode { --right-w: calc(var(--out-mini-w) + 80px); }
+.out-collapsed .outputs { width: var(--out-mini-w); bottom: auto; }
+.out-collapsed .outputs .window { display: none; }
+.out-collapsed .out-toggle { right: calc(var(--out-mini-w) + 18px); }
+.out-collapsed.windy-mode .out-toggle { right: calc(var(--out-mini-w) + 78px); }
+.out-collapsed .out-toggle svg { transform: rotate(180deg); }
+.out-collapsed .out-toggle .tag:not([hidden]) { display: inline; }
+.out-collapsed .out-mini { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); backdrop-filter: blur(8px); color: var(--text); text-align: left; }
+.out-mini:hover { border-color: var(--muted); }
+.mini-row { display: flex; align-items: center; gap: 7px; padding: 4px 6px; border-radius: 7px; font-size: 12px; }
+.mini-row.muted { opacity: 0.45; }
+.mini-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-off { font-weight: 700; font-variant-numeric: tabular-nums; }
+.mini-total { margin-bottom: 2px; background: var(--surface); }
+.mini-total .mini-name { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+.mini-stale { color: var(--muted); font-weight: 400; }
+
 /* Responsive rules for the sidebar/outputs layout (after their base rules so they win). */
 @media (max-width: 1100px) {
   :root { --out-w: 290px; }
-  .outputs { top: 124px; }
+  .outputs, .out-toggle { top: 124px; }
 }
 @media (max-width: 1100px) {
   .topbar { left: calc(var(--sb-open) + 20px); }
@@ -704,6 +740,37 @@ body[data-role="viewer"] :is(.event-start, .event-stop, #ev-start-btn, #ev-edit,
 .users-invite { display: grid; grid-template-columns: 1fr 1.4fr auto auto; gap: 8px; }
 @media (max-width: 700px) { .users-invite { grid-template-columns: 1fr 1fr; } }
 
+/* ---- Admin page (admins only): Users, Usage, Database ---- */
+.sb-item { position: relative; }
+.sb-badge { position: absolute; top: 3px; left: 25px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--accent); color: var(--bg); font-size: 10px; font-weight: 800; line-height: 16px; text-align: center; }
+.sb-badge[hidden] { display: none; }
+.admin-page .trends-inner { padding-top: 22px; }
+.admin-page [data-admin]:not([hidden]) { display: grid; gap: 16px; }
+.admin-page .tr-card-head h2 + .tag { margin-left: 8px; margin-right: auto; }
+.admin-help { margin: 0 0 10px; }
+.admin-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.admin-page .users-table td:nth-child(4) { white-space: nowrap; }
+.admin-page .users-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.tag.ok { background: var(--accent-bg); color: var(--accent-ink); }
+.tag.warn { background: color-mix(in srgb, var(--amber) 18%, transparent); color: var(--amber); }
+.tag.bad { background: color-mix(in srgb, var(--red) 15%, transparent); color: var(--red); }
+.tile-warn .tile-value { color: var(--amber); }
+.tile-bad .tile-value { color: var(--red); }
+.tr-table tr.row-bad td { color: var(--red); }
+.status-line.bad { color: var(--red); }
+#db-check-result { margin-bottom: 8px; }
+.admin-facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 0 0 10px; font-size: 12.5px; }
+.admin-facts dt { color: var(--muted); }
+.admin-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+/* 30-day bar strip (usage and recording coverage). */
+.day-bars-plot { display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); gap: 3px; align-items: end; height: 110px; }
+.day-bar { display: flex; align-items: flex-end; height: 100%; border-radius: 3px; background: var(--surface-2); }
+.day-bar span { width: 100%; border-radius: 3px; background: var(--accent); }
+.day-bar.low span { background: var(--red); }
+.day-bar.none { background: repeating-linear-gradient(135deg, var(--surface-2) 0 4px, transparent 4px 8px); }
+.day-bars-axis { display: flex; justify-content: space-between; margin-top: 4px; color: var(--muted); font-size: 11px; }
+@media (max-width: 1100px) { .admin-cols { grid-template-columns: minmax(0, 1fr); } }
+
 /* ---- Accent colours (Settings → General) ----
    Teal is the default in :root above. Each option overrides the accent tokens for dark mode,
    then for light mode. Kept muted so network colours and alert severities stay the loudest
@@ -762,7 +829,7 @@ dialog.disclaimer::backdrop { background: var(--backdrop); backdrop-filter: blur
 
   /* App bar: brand mark, totals, live switch, refresh. */
   .app-brand { top: 0; left: 0; right: 0; width: auto; height: var(--bar-h); padding: 0 10px env(safe-area-inset-right) 10px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; box-shadow: none; background: var(--surface); backdrop-filter: none; }
-  .app-brand .sb-brand, #sb-pin { display: none; }
+  .app-brand .sb-brand { display: none; }
   .topbar { position: fixed; z-index: 1120; top: 0; left: 56px; right: 10px; height: var(--bar-h); display: flex; align-items: center; gap: 8px; }
   .topbar-spacer { display: none; }
   .updated-banner { flex: 1; min-width: 0; flex-direction: column-reverse; align-items: flex-start; gap: 0; padding: 0; border: 0; background: none; box-shadow: none; text-align: left; }
@@ -806,6 +873,7 @@ dialog.disclaimer::backdrop { background: var(--backdrop); backdrop-filter: blur
 
   /* Alerts and outage lists flow down the page. */
   .outputs { position: static; order: 4; width: auto; margin: 12px 12px 0; gap: 12px; }
+  .out-toggle, .out-mini { display: none; }
   .window, .window[data-win="intel"], .window[data-win="networks"] { flex: none; max-height: none; backdrop-filter: none; background: var(--surface); }
   .win-body, .insights { overflow: visible; }
   .win-head { min-height: 44px; }
@@ -817,7 +885,7 @@ dialog.disclaimer::backdrop { background: var(--backdrop); backdrop-filter: blur
   .sidebar { display: none; top: 0; bottom: 0; left: 0; z-index: 1200; width: min(340px, calc(100vw - 40px)); padding-top: env(safe-area-inset-top); border-radius: 0 14px 14px 0; transition: none; }
   .sb-open .sidebar, .sb-pinned .sidebar { display: flex; width: min(340px, calc(100vw - 40px)); }
   .sb-scrim { z-index: 1190; background: var(--backdrop); }
-  #sb-toggle { display: none; }
+  .sb-top { display: none; }
   .toggles label { min-height: 32px; }
 
   /* Bottom tab bar. */
@@ -830,7 +898,7 @@ dialog.disclaimer::backdrop { background: var(--backdrop); backdrop-filter: blur
 
   /* Trends and Events pages. */
   .trends, .page { padding: var(--phone-top) 0 var(--tabs-h); }
-  .trends-inner, .events-page .trends-inner { padding: 14px 12px 24px; gap: 12px; }
+  .trends-inner, .events-page .trends-inner, .admin-page .trends-inner { padding: 14px 12px 24px; gap: 12px; }
   .tr-filters { gap: 6px; }
   .tr-filters .seg { overflow-x: auto; max-width: 100%; scrollbar-width: none; }
   .tr-tiles, .ev-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -844,7 +912,7 @@ dialog.disclaimer::backdrop { background: var(--backdrop); backdrop-filter: blur
   .ev-adjust-buttons { margin-left: 0; flex-wrap: wrap; }
 
   .trends, .page { overflow-x: hidden; }
-  .trends-inner, .events-page .trends-inner { grid-template-columns: minmax(0, 1fr); }
+  .trends-inner, .events-page .trends-inner, .admin-page .trends-inner { grid-template-columns: minmax(0, 1fr); }
   .trends-inner > *, .tr-card, .tr-filters > * { min-width: 0; max-width: 100%; }
 
   /* Small map: drop what the numbered rings and the drawer already say. */

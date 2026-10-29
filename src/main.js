@@ -8,6 +8,7 @@ import { initEvents, refreshActive, refreshEvents, repaintEvents, showEvents, up
 import { initTrends, loadTrends, refreshTrends } from "./trends.js";
 import { SCALES, WindField } from "./windfield.js";
 import { initUsers, requireUser } from "./users.js";
+import { initAdmin, showAdmin } from "./admin.js";
 
 const L = window.L;
 const $ = (s) => document.querySelector(s);
@@ -311,6 +312,7 @@ function renderPanels() {
   if (!state.outages) return;
   const includePlanned = $("#t-planned").checked;
   root.replaceChildren();
+  renderMiniPanel();
   for (const [net, meta] of Object.entries(NETWORKS)) {
     const feed = state.outages.networks[net];
     if (!feed) continue;
@@ -355,6 +357,26 @@ function renderPanels() {
     .filter((i) => i.type === "unplanned")
     .reduce((s, i) => s + i.customers, 0);
   $("#network-total").textContent = `${num(total)} off`;
+}
+
+// Summary strip shown when the outputs column is collapsed: unplanned customers off per network.
+function renderMiniPanel() {
+  const rows = Object.entries(NETWORKS)
+    .filter(([net]) => state.outages.networks[net])
+    .map(([net, meta]) => {
+      const feed = state.outages.networks[net];
+      const customers = feed.incidents.filter((i) => i.type === "unplanned").reduce((s, i) => s + i.customers, 0);
+      return { net, meta, feed, customers };
+    });
+  const total = rows.filter((r) => state.visible.has(r.net)).reduce((s, r) => s + r.customers, 0);
+  $("#out-mini").innerHTML =
+    `<span class="mini-row mini-total"><span class="mini-name">Off supply</span><span class="mini-off">${num(total)}</span></span>` +
+    rows
+      .map(
+        ({ net, meta, feed, customers }) => `<span class="mini-row${state.visible.has(net) ? "" : " muted"}" style="--c:${meta.color}" title="${esc(meta.name)}: ${num(customers)} customers off supply (unplanned)${feed.ok ? "" : " · feed unavailable"}">
+        <span class="swatch"></span><span class="mini-name">${esc(meta.name)}</span><span class="mini-off">${num(customers)}${feed.ok ? "" : ' <span class="mini-stale">!</span>'}</span></span>`,
+      )
+      .join("");
 }
 
 function clusterSize(customers) {
@@ -551,6 +573,8 @@ function renderInsights() {
   const hidden = all.length - list.length;
   const root = $("#insights");
   $("#insight-count").textContent = `${list.length} active`;
+  $("#out-toggle-count").textContent = list.length;
+  $("#out-toggle-count").hidden = !list.length;
   const restore = hidden ? `<button class="link-button insights-restore" type="button">Show ${hidden} dismissed</button>` : "";
   if (!list.length) {
     root.innerHTML = (hidden ? '<div class="empty">All callouts dismissed.</div>' : '<div class="empty">No callouts. Unplanned outages are below thresholds and no forecast gusts ≥ 55 km/h in the next 24 h.</div>') + restore;
@@ -807,19 +831,21 @@ function setLive(on) {
   if (on) state.liveTimer = setInterval(() => refresh(), seconds * 1000);
 }
 
-// ---- Views (Map / Trends) ------------------------------------------------------------
+// ---- Views (Map / Trends / Events / Admin) ---------------------------------------------
 
-// Routes: #trends, #events, #events/<id>; no hash = map.
+// Routes: #trends, #events, #events/<id>, #admin, #admin/<tab>; no hash = map.
 function parseRoute() {
-  const m = location.hash.match(/^#(map|trends|events)(?:\/(\d+))?$/);
-  return m ? { view: m[1], id: m[2] ? +m[2] : null } : null;
+  const m = location.hash.match(/^#(map|trends|events|admin)(?:\/(\w+))?$/);
+  return m ? { view: m[1], id: m[2] == null ? null : /^\d+$/.test(m[2]) ? +m[2] : m[2] } : null;
 }
 
 function setView(view, id = null) {
+  if (view === "admin" && document.body.dataset.role !== "admin") view = "map";
   state.view = view;
   document.body.classList.toggle("view-page", view !== "map");
   $("#trends").hidden = view !== "trends";
   $("#events").hidden = view !== "events";
+  $("#admin").hidden = view !== "admin";
   document.querySelectorAll(".sb-item[data-view], #mobile-tabs [data-tab]").forEach((b) => {
     const on = (b.dataset.view ?? b.dataset.tab) === view;
     b.classList.toggle("active", on);
@@ -832,6 +858,7 @@ function setView(view, id = null) {
   closeSidebar();
   if (view === "trends") loadTrends();
   else if (view === "events") showEvents(id);
+  else if (view === "admin") showAdmin(id);
   else {
     state.map?.invalidateSize();
     renderWindCallouts();
@@ -845,8 +872,6 @@ function setSidebar({ open = document.body.classList.contains("sb-open"), pinned
   document.body.classList.toggle("sb-pinned", pinned);
   document.body.classList.toggle("sb-open", open && !pinned);
   $("#sb-scrim").hidden = !(open && !pinned);
-  $("#sb-pin").setAttribute("aria-pressed", String(pinned));
-  $("#sb-pin").title = pinned ? "Unpin sidebar" : "Pin sidebar open";
   $("#sb-toggle").setAttribute("aria-expanded", String(open || pinned));
   $("#sb-toggle").title = open || pinned ? "Collapse sidebar" : "Expand sidebar";
   if (!isPhone()) store.set("sidebarPinned", pinned ? "1" : "0"); // phones never pin
@@ -856,6 +881,25 @@ function setSidebar({ open = document.body.classList.contains("sb-open"), pinned
     const css = getComputedStyle(document.documentElement);
     const delta = parseFloat(css.getPropertyValue("--sb-open")) - parseFloat(css.getPropertyValue("--rail"));
     if (state.view === "map") state.map.panBy([pinned ? -delta / 2 : delta / 2, 0], { animate: false });
+    renderWindCallouts();
+    updateLeaders();
+  }
+}
+
+// Collapse the outputs column to its summary strip, or expand it (desktop only; phones stack
+// it below the map).
+function setOutputs(collapsed) {
+  const was = document.body.classList.contains("out-collapsed");
+  const now = collapsed && !isPhone();
+  document.body.classList.toggle("out-collapsed", now);
+  $("#out-toggle").setAttribute("aria-expanded", String(!now));
+  $("#out-toggle").title = now ? "Expand intelligence panel" : "Collapse intelligence panel";
+  if (!isPhone()) store.set("outputsCollapsed", collapsed ? "1" : "0");
+  if (now !== was && state.map) {
+    // Same as the sidebar: keep the same area centred in the visible part of the map.
+    const css = getComputedStyle(document.documentElement);
+    const delta = parseFloat(css.getPropertyValue("--out-w")) - parseFloat(css.getPropertyValue("--out-mini-w"));
+    if (state.view === "map") state.map.panBy([now ? -delta / 2 : delta / 2, 0], { animate: false });
     renderWindCallouts();
     updateLeaders();
   }
@@ -871,6 +915,7 @@ function applyPhoneLayout() {
   document.body.classList.toggle("phone", phone);
   if (!phone) document.body.classList.remove("map-expanded");
   setSidebar({ open: false, pinned: !phone && store.get("sidebarPinned", "0") === "1" });
+  setOutputs(store.get("outputsCollapsed", "0") === "1");
   if (!state.map) return;
   state.map.invalidateSize();
   fitVictoria();
@@ -916,9 +961,15 @@ function wireLayout() {
     if (document.body.classList.contains("sb-pinned")) return;
     setSidebar({ open: !document.body.classList.contains("sb-open") });
   });
-  $("#sb-toggle").addEventListener("click", () => setSidebar({ open: !document.body.classList.contains("sb-open") }));
-  $("#sb-pin").addEventListener("click", () => setSidebar({ open: false, pinned: !document.body.classList.contains("sb-pinned") }));
+  // Expanding from the top button keeps the sidebar open (pinned, remembered) until it is
+  // collapsed again; the rail's Map layers button still opens a temporary flyout.
+  $("#sb-toggle").addEventListener("click", () => {
+    const expanded = document.body.classList.contains("sb-open") || document.body.classList.contains("sb-pinned");
+    setSidebar({ open: false, pinned: !expanded });
+  });
   $("#sb-scrim").addEventListener("click", closeSidebar);
+  $("#out-toggle").addEventListener("click", () => setOutputs(!document.body.classList.contains("out-collapsed")));
+  $("#out-mini").addEventListener("click", () => setOutputs(false));
   document.addEventListener("keydown", (e) => e.key === "Escape" && !document.querySelector("dialog[open]") && closeSidebar());
 
   const collapsed = new Set(JSON.parse(store.get("collapsedWindows", "[]")));
@@ -1086,6 +1137,7 @@ async function boot() {
     toast,
     onActiveChange: () => updateStartButton(),
   });
+  initAdmin({ toast, names: Object.fromEntries(Object.entries(NETWORKS).map(([k, m]) => [k, m.name])) }); // before routing: turns ?admin= links into #admin/…
   window.addEventListener("hashchange", () => {
     const r = parseRoute();
     setView(r?.view ?? "map", r?.id ?? null);

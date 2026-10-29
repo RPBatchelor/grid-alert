@@ -20,7 +20,7 @@ cross-origin browser requests.
 
 **Sign-in:** the app needs an account. On first start the server creates an admin from
 `ADMIN_EMAIL` / `ADMIN_PASSWORD` (set them before `npm run dev` or `npm start`). Others use
-**Request access** on the landing page (`/login`); admins approve them in Settings → Users as
+**Request access** on the landing page (`/login`); admins approve them in Admin → Users as
 Viewer (read only), Operator (can change events) or Admin (manages users), and the person is
 emailed a one-time link to set a password (`server/auth.js`). Mail goes through Resend
 (`RESEND_API_KEY`); without a key, emails are printed to the server log. Passwords are hashed

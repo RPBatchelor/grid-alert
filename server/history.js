@@ -4,7 +4,7 @@
 // incident register (first/last seen, peak customers). A background collector keeps
 // snapshots coming while the server runs, even when nobody has the app open.
 import { DatabaseSync } from "node:sqlite";
-import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -78,6 +78,111 @@ export function backupDatabase({ keep = 14 } = {}) {
   const old = readdirSync(BACKUP_DIR).filter((f) => /^history-\d{4}-\d{2}-\d{2}\.sqlite$/.test(f)).sort().slice(0, -keep);
   for (const f of old) rmSync(resolve(BACKUP_DIR, f));
   return target;
+}
+
+// ---- Database health for the admin page ---------------------------------------------------
+
+const fileSize = (f) => {
+  try {
+    return statSync(f).size;
+  } catch {
+    return 0;
+  }
+};
+
+// Size, row counts, backups, and gaps in the recorded timeline: collector gaps (no snapshot
+// for longer than 2.5 intervals) over all history, plus per-network feed gaps (snapshots
+// where a tracker failed) and daily coverage over the last 30 days.
+export function databaseStats({ intervalMinutes = 5 } = {}) {
+  const d = open();
+  const intervalMs = (intervalMinutes > 0 ? intervalMinutes : 5) * 60000;
+  const now = Date.now();
+  const pragma = (name) => Object.values(d.prepare(`PRAGMA ${name}`).get())[0];
+  const tables = d
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+    .all()
+    .map(({ name }) => ({ name, rows: d.prepare(`SELECT COUNT(*) AS n FROM "${name}"`).get().n }));
+  const bounds = d.prepare("SELECT MIN(ts) AS first, MAX(ts) AS last, COUNT(*) AS n FROM snapshots").get();
+
+  const threshold = intervalMs * 2.5;
+  const gaps = d
+    .prepare("SELECT prev AS start, ts AS end FROM (SELECT ts, LAG(ts) OVER (ORDER BY ts) AS prev FROM snapshots) WHERE ts - prev > ? ORDER BY ts DESC")
+    .all(threshold);
+  // The time since the last snapshot is a gap too, while it is overdue.
+  if (bounds.last && now - bounds.last > threshold) gaps.unshift({ start: bounds.last, end: null });
+  const missingMs = gaps.reduce((s, g) => s + ((g.end ?? now) - g.start - intervalMs), 0);
+  const span = bounds.first ? now - bounds.first : 0;
+
+  // Last 30 days, as rolling 24-hour windows ending now.
+  const since = now - 30 * 86400e3;
+  const recent = d
+    .prepare("SELECT s.ts, group_concat(t.network) AS nets FROM snapshots s LEFT JOIN totals t ON t.snapshot_id = s.id AND t.type = 'unplanned' WHERE s.ts >= ? GROUP BY s.id ORDER BY s.ts")
+    .all(since);
+  const expectedPerDay = 86400e3 / intervalMs;
+  const days = [];
+  for (let i = 29; i >= 0; i--) {
+    const end = now - i * 86400e3;
+    const start = end - 86400e3;
+    const before = bounds.first == null || bounds.first > end;
+    days.push({ start, end, snapshots: 0, expected: before ? 0 : Math.round(((end - Math.max(start, bounds.first)) / 86400e3) * expectedPerDay) });
+  }
+  const networks = d.prepare("SELECT DISTINCT network FROM totals").all().map((r) => r.network);
+  const feeds = Object.fromEntries(networks.map((n) => [n, { network: n, missing: 0, gaps: 0, longest: null, lastMissing: null, run: null }]));
+  for (const { ts, nets } of recent) {
+    const day = days[Math.min(29, Math.floor((ts - since) / 86400e3))];
+    if (day) day.snapshots++;
+    const present = new Set((nets ?? "").split(","));
+    for (const f of Object.values(feeds)) {
+      if (present.has(f.network)) {
+        if (f.run) {
+          f.run.end = ts;
+          if (!f.longest || f.run.end - f.run.start > f.longest.end - f.longest.start) f.longest = f.run;
+          f.run = null;
+        }
+        continue;
+      }
+      f.missing++;
+      f.lastMissing = ts;
+      if (!f.run) {
+        f.gaps++;
+        f.run = { start: ts, end: null };
+      }
+    }
+  }
+  for (const f of Object.values(feeds)) {
+    // Still failing at the latest snapshot.
+    if (f.run && (!f.longest || now - f.run.start > f.longest.end - f.longest.start)) f.longest = f.run;
+    f.failing = !!f.run;
+    delete f.run;
+  }
+
+  const backups = existsSync(BACKUP_DIR)
+    ? readdirSync(BACKUP_DIR)
+        .filter((f) => f.endsWith(".sqlite"))
+        .sort()
+        .reverse()
+        .map((file) => ({ file, size: fileSize(resolve(BACKUP_DIR, file)), at: statSync(resolve(BACKUP_DIR, file)).mtimeMs }))
+    : [];
+
+  return {
+    path: DB_PATH,
+    sqliteVersion: d.prepare("SELECT sqlite_version() AS v").get().v,
+    size: { db: fileSize(DB_PATH), wal: fileSize(`${DB_PATH}-wal`), free: pragma("freelist_count") * pragma("page_size") },
+    tables,
+    snapshots: { first: bounds.first, last: bounds.last, count: bounds.n, intervalMinutes, collecting: intervalMinutes > 0 },
+    coverage: { span, missingMs, percent: span ? Math.max(0, Math.min(100, 100 * (1 - missingMs / span))) : null },
+    gaps: { count: gaps.length, thresholdMs: threshold, longest: gaps.reduce((a, g) => (!a || (g.end ?? now) - g.start > (a.end ?? now) - a.start ? g : a), null), recent: gaps.slice(0, 100) },
+    days,
+    feeds: Object.values(feeds).map((f) => ({ ...f, snapshots: recent.length })),
+    backups,
+  };
+}
+
+// SQLite's quick consistency check (reads the whole file; a few seconds on a large history).
+export function integrityCheck() {
+  const started = Date.now();
+  const messages = open().prepare("PRAGMA quick_check").all().map((r) => Object.values(r)[0]);
+  return { ok: messages.length === 1 && messages[0] === "ok", messages: messages.slice(0, 20), ms: Date.now() - started };
 }
 
 export function close() {

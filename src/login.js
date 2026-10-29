@@ -58,7 +58,8 @@ function handle(form, submit) {
   });
 }
 
-const goToApp = () => location.replace(params.get("next")?.startsWith("/") ? params.get("next") : "/");
+// Same-site paths only: "//host" and "/\host" would leave the site.
+const goToApp = () => location.replace(/^\/(?![/\\])/.test(params.get("next") ?? "") ? params.get("next") : "/");
 
 handle($("#form-signin"), async (d) => {
   await post("/api/auth/login", { email: d.email, password: d.password });
