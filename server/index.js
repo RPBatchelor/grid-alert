@@ -1,5 +1,6 @@
 // Production server: serves the built client from dist/ and the /api feed proxy.
 // Run: npm run build && npm start
+import { setDefaultResultOrder } from "node:dns";
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
@@ -7,6 +8,10 @@ import { fileURLToPath } from "node:url";
 import { apiMiddleware, startCollector, stopCollector } from "./api.js";
 import { pageGate } from "./auth.js";
 import { close as closeHistory } from "./history.js";
+
+// Docker's default network has no IPv6 route, but some upstreams (RainViewer) publish IPv6
+// addresses; try IPv4 first so outbound fetches don't fail with "fetch failed".
+setDefaultResultOrder("ipv4first");
 
 const DIST = fileURLToPath(new URL("../dist/", import.meta.url));
 const PORT = Number(process.env.PORT) || 8080;

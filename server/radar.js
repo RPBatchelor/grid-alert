@@ -117,10 +117,20 @@ async function loadFromDisk() {
 }
 
 async function fetchOk(url, as) {
-  const res = await fetch(url, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(20000) });
+  let res;
+  try {
+    res = await fetch(url, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(20000) });
+  } catch (error) {
+    // Node reports network failures as a bare "fetch failed"; the reason is in error.cause.
+    const cause = error.cause?.code ?? error.cause?.message;
+    throw new Error(`${new URL(url).host}: ${error.message}${cause ? ` (${cause})` : ""}`);
+  }
   if (!res.ok) throw new Error(`RainViewer HTTP ${res.status}`);
   return as === "json" ? res.json() : Buffer.from(await res.arrayBuffer());
 }
+
+// One retry after a short pause, so a single dropped connection doesn't lose a whole frame.
+const fetchRetry = (url, as) => fetchOk(url, as).catch(() => new Promise((r) => setTimeout(r, 1500)).then(() => fetchOk(url, as)));
 
 // Download every tile of one frame into a temporary folder, then rename it into place, so a
 // frame is either complete or absent.
@@ -134,7 +144,7 @@ async function download(host, frame) {
     for (let i = 0; i < jobs.length; i += 4) {
       await Promise.all(
         jobs.slice(i, i + 4).map(async ([x, y]) => {
-          const png = await fetchOk(`${host}${frame.path}/${SIZE}/${Z}/${x}/${y}/2/0_0.png`);
+          const png = await fetchRetry(`${host}${frame.path}/${SIZE}/${Z}/${x}/${y}/2/0_0.png`);
           await writeFile(join(part, `${x}-${y}.bin.gz`), gzipSync(pngToBytes(png)));
         }),
       );
@@ -156,7 +166,7 @@ async function prune() {
 async function sync() {
   try {
     if (!lastSync) await loadFromDisk();
-    const meta = await fetchOk("https://api.rainviewer.com/public/weather-maps.json", "json");
+    const meta = await fetchRetry("https://api.rainviewer.com/public/weather-maps.json", "json");
     const have = new Set(frames);
     // Newest first, so a fresh install has the current frame within seconds.
     for (const frame of [...(meta.radar?.past ?? [])].reverse()) {
