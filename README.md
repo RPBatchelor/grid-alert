@@ -115,7 +115,7 @@ live status, and a module like `src/fireLayer.js`.
 |---|---|---|
 | Wind / gusts / rain / temperature field, wind display (static arrows, slow animation, or hidden; shown on Wind/Gusts only), 48 h forecast slider with a red Now marker and a Now button to snap back | Open-Meteo forecast API on a ~0.65° grid over Victoria | Cached on the server for 30 min (stays within Open-Meteo's free 10k calls/day) |
 | Windy base map (optional) | Windy Map Forecast API | Paste a key in **Settings** or set `VITE_WINDY_KEY`. A Windy *Premium* subscription does not include a Map Forecast API key. Get one at api.windy.com/keys and allow your domain. If the key fails, the app falls back to the built-in layers. |
-| Rain radar (observed) | RainViewer public tiles | Latest past frame |
+| Rain radar (observed) | RainViewer, cached on the server (`server/radar.js`) | Follows the timeline: the latest frame at Now (checked every 5 min), the matching 10-minute frame for past hours (history kept 24 h), and Open-Meteo modelled rain after Now, since radar can't see ahead. A chip on the timeline says which is showing. Drawn smoothly by interpolating reflectivity rather than stretching RainViewer's zoom-7 pixels |
 | Network boundaries | `public/data/network-boundaries.geojson` | **Approximate.** See below. |
 | Outages | AusNet, Powercor, CitiPower, Jemena, United Energy trackers | See below |
 

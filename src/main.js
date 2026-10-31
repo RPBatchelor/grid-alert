@@ -7,6 +7,7 @@ import { HALO, applyTheme, getSettings, initSettings, loadSettings, resolvedThem
 import { initEvents, refreshActive, refreshEvents, repaintEvents, showEvents, updateStartButton } from "./events.js";
 import { initTrends, loadTrends, refreshTrends } from "./trends.js";
 import { SCALES, WindField } from "./windfield.js";
+import { RadarLayer, frameNear, latestFrame, loadRadarFrames } from "./radar.js";
 import { initUsers, requireUser } from "./users.js";
 import { initAdmin, showAdmin } from "./admin.js";
 
@@ -53,6 +54,7 @@ const state = {
   collapsed: new Set(JSON.parse(store.get("collapsed", "[]"))),
   liveTimer: null,
   playTimer: null,
+  radarTimer: null,
   followNow: true, // the timeline tracks the current hour until the user scrubs away
   calloutPositions: JSON.parse(store.get("dockedCallouts", "{}")),
   labelPositions: JSON.parse(store.get("labelPositions", "{}")),
@@ -253,6 +255,7 @@ async function refresh({ force = false } = {}) {
       toast(`Weather refresh failed: ${weather.reason.message}.`);
     }
     renderAll();
+    refreshRadar();
     if (state.view === "trends") loadTrends();
     if (state.view === "events") refreshEvents();
     refreshFire();
@@ -719,6 +722,7 @@ function setVariable(variable) {
   $("#wind-style-row").hidden = !(variable === "speed" || variable === "gust");
   renderLegend();
   applyBasemap();
+  syncRadar(); // modelled rain under the radar is not needed while the Rain layer shows
 }
 
 function setWindStyle(style) {
@@ -787,6 +791,7 @@ function setTime(t, { follow = false } = {}) {
   layers.wind?.setTime(t);
   updateTimeLabel();
   renderWindCallouts();
+  syncRadar();
 }
 
 function stopPlay() {
@@ -802,20 +807,89 @@ function snapToNow() {
 }
 
 // ---- Rain radar (RainViewer, observed) ---------------------------------------------------
+// Follows the timeline: the latest frame at "now", the matching stored frame for past hours,
+// and Open-Meteo modelled rain for hours after now (radar cannot see ahead).
+
+const RADAR_POLL_MS = 5 * 60000;
 
 async function setRadar(on) {
-  if (layers.radar) state.map.removeLayer(layers.radar);
-  layers.radar = null;
-  if (!on) return;
+  clearInterval(state.radarTimer);
+  state.radarTimer = null;
+  if (!on) {
+    if (layers.radar) state.map.removeLayer(layers.radar);
+    layers.radar = null;
+    return syncRadar();
+  }
   try {
-    const meta = await getJson("https://api.rainviewer.com/public/weather-maps.json");
-    const frame = meta.radar?.past?.at(-1);
-    if (!frame) throw new Error("no radar frames available");
-    layers.radar = L.tileLayer(`${meta.host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`, { pane: "radar", opacity: 0.75, maxNativeZoom: 7, maxZoom: 14, attribution: '<a href="https://www.rainviewer.com/">RainViewer</a>' }).addTo(state.map);
-    toast(`Radar frame ${shortTime(new Date(frame.time * 1000).toISOString())}`, 3000);
+    await loadRadarFrames();
   } catch (error) {
     $("#t-radar").checked = false;
     toast(`Rain radar unavailable: ${error.message}`);
+    return syncRadar();
+  }
+  layers.radar ??= new RadarLayer();
+  syncRadar();
+  layers.radar.addTo(state.map);
+  prefetchRadar();
+  state.radarTimer = setInterval(refreshRadar, RADAR_POLL_MS);
+}
+
+// Picks up newly published frames; at "now" the overlay moves on to the latest one.
+async function refreshRadar() {
+  if (!layers.radar) return;
+  try {
+    if (await loadRadarFrames()) {
+      syncRadar();
+      prefetchRadar();
+    }
+  } catch (error) {
+    console.warn("Radar refresh failed:", error.message);
+  }
+  syncRadar(); // the age shown changes even without a new frame
+}
+
+// Hourly frames on the timeline, loaded ahead so scrubbing and Play are instant.
+function prefetchRadar() {
+  if (!layers.radar || !state.weather) return;
+  const now = nowIndex(state.weather);
+  layers.radar.prefetch(state.weather.times.slice(0, now).map((iso) => frameNear(Date.parse(iso))).filter((t) => t != null));
+}
+
+function syncRadar() {
+  const el = $("#radar-status");
+  const on = $("#t-radar").checked && !!layers.radar;
+  const now = state.weather ? nowIndex(state.weather) : 0;
+  const future = !!state.weather && state.t > now;
+  let frame = null;
+  if (on && !future) frame = !state.weather || state.t === now ? latestFrame() : frameNear(Date.parse(state.weather.times[state.t]));
+  layers.radar?.setFrame(frame);
+
+  // Modelled rain stands in after now, unless the weather layer already shows rain.
+  const model = on && future && state.variable !== "rain" && !state.windy;
+  if (model && !layers.rainModel) layers.rainModel = new WindField({ variable: "rain", windStyle: "none", pane: "radar", opacity: 0.75 }).addTo(state.map);
+  if (!model && layers.rainModel) {
+    state.map.removeLayer(layers.rainModel);
+    layers.rainModel = null;
+  }
+  if (layers.rainModel && state.weather) {
+    if (layers.rainModel.weather !== state.weather) layers.rainModel.setData(state.weather, state.t);
+    else if (layers.rainModel.t !== state.t) layers.rainModel.setTime(state.t);
+  }
+
+  el.hidden = !on;
+  if (!on) return;
+  el.className = `radar-status${future ? " model" : frame == null ? " none" : ""}`;
+  if (future) {
+    el.textContent = state.variable === "rain" || state.windy ? "Rain: forecast" : "Rain: model forecast";
+    el.title = "Radar only shows rain that has fallen. After now, the map shows modelled rain (Open-Meteo) instead.";
+  } else if (frame == null) {
+    el.textContent = "No radar for this hour";
+    el.title = "Radar history is kept for the last 24 hours once the server has been running.";
+  } else {
+    const mins = Math.round((Date.now() / 1000 - frame) / 60);
+    el.textContent = `Radar ${new Intl.DateTimeFormat("en-AU", { timeZone: TZ, hour: "numeric", minute: "2-digit" }).format(new Date(frame * 1000))}`;
+    el.title = `Observed rain (RainViewer), ${mins} min old`;
+    el.classList.toggle("stale", state.t === now && mins > 30);
   }
 }
 
@@ -1031,7 +1105,10 @@ function wireControls() {
     if (!state.weather) return;
     const now = nowIndex(state.weather);
     if (state.followNow && !state.playTimer && state.t !== now) setTime(now, { follow: true });
-    else updateTimeLabel();
+    else {
+      updateTimeLabel();
+      syncRadar();
+    }
   }, 60000);
 
   initSettings(onSettingChange, () => state.outages);
@@ -1101,6 +1178,7 @@ async function boot() {
         if (!state.weather) return;
         state.t = nowIndex(state.weather, ts);
         renderWindCallouts();
+        syncRadar();
       });
     } catch (error) {
       console.error(error);

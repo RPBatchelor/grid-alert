@@ -5,6 +5,7 @@ import { getFireDanger } from "./fireDanger.js";
 import { getFireRestrictions } from "./fireRestrictions.js";
 import { AuthError, authRoutes, ensureAdmin, purgeExpired, roleAtLeast, sessionUser } from "./auth.js";
 import { backupDatabase, getHistory, getIncidents, historyPath, lastSnapshotTs, recordSnapshot } from "./history.js";
+import { getRadarFrames, getRadarTile, startRadar, stopRadar } from "./radar.js";
 
 // Fetch outages and store each fresh result in the history database.
 async function outages(maxAgeMs) {
@@ -28,6 +29,17 @@ const ROUTES = [
   ["GET", /^\/api\/health$/, () => health()],
   ["GET", /^\/api\/fire-danger$/, () => getFireDanger()],
   ["GET", /^\/api\/fire-restrictions$/, () => getFireRestrictions()],
+  ["GET", /^\/api\/radar$/, () => getRadarFrames()],
+  // Frames never change once stored, so the browser may keep tiles for a day.
+  [
+    "GET",
+    /^\/api\/radar\/(\d+)\/(\d+)\/(\d+)$/,
+    async (url, body, [time, x, y]) => {
+      const buffer = await getRadarTile(+time, +x, +y);
+      if (!buffer) throw new HttpError(404, "No such radar tile.");
+      return { binary: { buffer, type: "application/octet-stream", encoding: "gzip", cache: "private, max-age=86400, immutable" } };
+    },
+  ],
   [
     "GET",
     /^\/api\/history$/,
@@ -108,6 +120,7 @@ export function startCollector() {
   }
   purgeTimer = setInterval(() => purgeExpired(), 60 * 60_000);
   purgeTimer.unref?.();
+  startRadar();
   const minutes = collectMinutes();
   if (!(minutes > 0)) return;
   const run = () => outages(minutes * 60000 - 5000).catch((error) => console.error("Collector fetch failed:", error.message));
@@ -134,6 +147,7 @@ export function stopCollector() {
   clearInterval(collector);
   clearInterval(backupTimer);
   clearInterval(purgeTimer);
+  stopRadar();
   collector = backupTimer = purgeTimer = null;
 }
 
@@ -183,6 +197,12 @@ export async function apiMiddleware(req, res, next) {
     const body = await readJson(req);
     const result = await route.handler(url, body, route.m.slice(1));
     if (req.method !== "GET") audit(user, req, url, result);
+    // Inline binary data: handlers may return { binary: { buffer, type, encoding?, cache } }.
+    if (result?.binary) {
+      const { buffer, type, encoding, cache } = result.binary;
+      res.writeHead(200, { "Content-Type": type, "Content-Length": buffer.length, "Cache-Control": cache, ...(encoding ? { "Content-Encoding": encoding } : {}) });
+      return res.end(buffer);
+    }
     if (result?.file) {
       const { buffer, filename, type } = result.file;
       res.writeHead(200, {

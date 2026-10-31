@@ -227,7 +227,7 @@ export async function getWeather({ maxAgeMs = 30 * 60000 } = {}) {
     hourly: HOURLY.join(","),
     wind_speed_unit: "kmh",
     timezone: "Australia/Melbourne",
-    past_hours: "3",
+    past_hours: "6", // the timeline's look-back; radar history (server/radar.js) covers it
     forecast_hours: "48",
     timeformat: "unixtime",
   });
