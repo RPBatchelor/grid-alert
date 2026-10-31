@@ -18,17 +18,61 @@ function save() {
   ctx.store.set("trends", JSON.stringify({ ...opts, types: [...opts.types], nets: [...opts.nets] }));
 }
 
-function segment(el, key, values) {
+function segment(el, key, onPick) {
   el.querySelectorAll("button").forEach((b) => {
     b.classList.toggle("active", b.dataset.value === String(opts[key]));
     b.setAttribute("aria-pressed", String(b.dataset.value === String(opts[key])));
     b.onclick = () => {
       opts[key] = b.dataset.value;
+      onPick?.(b.dataset.value);
       save();
-      segment(el, key, values);
+      segment(el, key, onPick);
       loadTrends();
     };
   });
+}
+
+// ---- Custom window ------------------------------------------------------------------------
+
+// datetime-local <-> epoch ms (browser local time)
+const toLocalInput = (ms) => new Date(ms - new Date(ms).getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+const fromLocalInput = (v) => (v ? new Date(v).getTime() : null);
+const MIN_WINDOW = 10 * 60000;
+
+// Picking "Custom…" starts from the window currently shown, so it can be adjusted from there.
+function pickRange(value) {
+  if (value === "custom" && opts.from == null) {
+    opts.to = tr.data?.to ?? Date.now();
+    opts.from = tr.data?.from ?? opts.to - RANGES["24h"];
+  }
+  syncCustom();
+}
+
+function syncCustom(message) {
+  const form = $("#tr-custom");
+  form.hidden = opts.range !== "custom";
+  if (form.hidden) return;
+  if (opts.from != null) {
+    $("#tr-from").value = toLocalInput(opts.from);
+    $("#tr-to").value = toLocalInput(opts.to);
+  }
+  customMessage(message ?? (opts.from != null ? `Showing ${fmtTime(opts.from)} to ${fmtTime(opts.to)} (${fmtDuration(opts.to - opts.from)})` : ""));
+}
+
+function customMessage(text, error = false) {
+  const el = $("#tr-custom-msg");
+  el.textContent = text;
+  el.classList.toggle("error", error);
+}
+
+function applyCustom(from, to) {
+  if (from == null || to == null) return customMessage("Enter both a start and an end.", true);
+  if (to - from < MIN_WINDOW) return customMessage("The end must be at least 10 minutes after the start.", true);
+  Object.assign(opts, { range: "custom", from, to });
+  save();
+  segment($("#tr-range"), "range", pickRange);
+  syncCustom();
+  loadTrends();
 }
 
 function chips(el, key, entries, colors) {
@@ -56,19 +100,35 @@ export function initTrends(context) {
   const saved = JSON.parse(ctx.store.get("trends", "{}"));
   opts = {
     range: saved.range ?? "24h",
+    from: saved.from ?? null, // custom window (epoch ms)
+    to: saved.to ?? null,
     metric: saved.metric ?? "customers",
     chart: saved.chart ?? "bar",
     types: new Set(saved.types ?? ["unplanned"]),
     nets: new Set(saved.nets ?? STACK_ORDER),
   };
-  segment($("#tr-range"), "range");
+  if (opts.range === "custom" && opts.from == null) opts.range = "24h";
+  segment($("#tr-range"), "range", pickRange);
+  syncCustom();
+  $("#tr-custom").addEventListener("submit", (e) => {
+    e.preventDefault();
+    applyCustom(fromLocalInput($("#tr-from").value), fromLocalInput($("#tr-to").value));
+  });
+  $("#tr-custom").addEventListener("input", () => customMessage("Press Show window to update."));
+  $("#tr-to-now").addEventListener("click", () => applyCustom(fromLocalInput($("#tr-from").value), Date.now()));
+  $("#tr-zoom-use").addEventListener("click", () => {
+    const d = tr.data;
+    const r = tr.zoomRange;
+    if (!d || !r) return;
+    applyCustom(Math.max(d.from, d.buckets[r.from].start), Math.min(d.to, d.buckets[r.to].start + d.bucketMs));
+  });
   segment($("#tr-metric"), "metric");
   segment($("#tr-chart"), "chart");
   chips($("#tr-types"), "types", [["unplanned", "Unplanned"], ["planned", "Planned"]]);
   chips($("#tr-nets"), "nets", STACK_ORDER.map((n) => [n, ctx.names[n]]), seriesColors());
   $("#tr-zoom-reset").addEventListener("click", () => {
     tr.chart?.resetZoom();
-    $("#tr-zoom-reset").hidden = true;
+    $("#tr-zoom-reset").hidden = $("#tr-zoom-use").hidden = true;
   });
   $("#tr-table-toggle").addEventListener("click", (e) => {
     const table = $("#tr-table");
@@ -80,8 +140,9 @@ export function initTrends(context) {
 
 export async function loadTrends() {
   if (!opts) return;
-  const span = RANGES[opts.range];
-  const to = Date.now();
+  const custom = opts.range === "custom" && opts.from != null;
+  const to = custom ? opts.to : Date.now();
+  const span = custom ? opts.to - opts.from : RANGES[opts.range];
   const params = new URLSearchParams({ to: String(to), networks: [...opts.nets].join(","), types: [...opts.types].join(","), metric: opts.metric });
   if (span) {
     const target = opts.chart === "bar" ? 96 : 200; // fewer, wider bars; finer lines
@@ -126,10 +187,13 @@ function render() {
     names: ctx.names,
     colors: ctx.colors(),
     zoom: true,
-    onZoom: (range, zoomed) => ($("#tr-zoom-reset").hidden = !zoomed),
+    onZoom: (range, zoomed) => {
+      tr.zoomRange = range;
+      $("#tr-zoom-reset").hidden = $("#tr-zoom-use").hidden = !zoomed;
+    },
   });
   tr.chart = chart;
-  $("#tr-zoom-reset").hidden = true;
+  $("#tr-zoom-reset").hidden = $("#tr-zoom-use").hidden = true;
   $("#tr-title").textContent = opts.metric === "outages" ? "Number of outages over time" : "Customers off supply over time";
 
   renderTiles(metricLabel);
@@ -155,8 +219,10 @@ function renderTiles(metricLabel) {
   }
   const values = d.totals.filter((v) => v != null);
   const change = values.length > 1 ? values.at(-1) - values[0] : null;
+  // A custom window that ended in the past shows its closing value instead of the live one.
+  const past = opts.range === "custom" && d.to < Date.now() - 10 * 60000;
   const tiles = [
-    ["Now", now == null ? "—" : num(now), metricLabel],
+    past ? ["End of window", values.length ? num(values.at(-1)) : "—", `${metricLabel}, last recorded interval`] : ["Now", now == null ? "—" : num(now), metricLabel],
     ["Peak in range", d.peak ? num(d.peak.value) : "—", d.peak ? fmtTime(d.peak.ts) : "No data in range"],
     ["Change over range", change == null ? "—" : `${change > 0 ? "+" : change < 0 ? "−" : ""}${num(Math.abs(change))}`, "first → last recorded interval"],
     ["Incidents in range", num(tr.incidentTotal), `${opts.types.size > 1 ? "planned + unplanned" : [...opts.types][0]}, selected networks`],

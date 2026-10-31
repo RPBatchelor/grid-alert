@@ -192,6 +192,7 @@
             <button type="button" data-value="7d">7 d</button>
             <button type="button" data-value="30d">30 d</button>
             <button type="button" data-value="all">All</button>
+            <button type="button" data-value="custom">Custom…</button>
           </div>
           <div class="seg tr-seg" id="tr-metric" aria-label="Measure">
             <button type="button" data-value="customers">Customers off supply</button>
@@ -201,12 +202,21 @@
           <div class="tr-chips" id="tr-nets" aria-label="Networks"></div>
         </div>
 
+        <form class="tr-custom" id="tr-custom" hidden aria-label="Custom time window">
+          <label>From <input type="datetime-local" id="tr-from" required /></label>
+          <label>To <input type="datetime-local" id="tr-to" required /></label>
+          <button type="button" class="link-button" id="tr-to-now">To now</button>
+          <button type="submit" class="btn small primary" id="tr-apply">Show window</button>
+          <span class="tr-custom-msg" id="tr-custom-msg" role="status"></span>
+        </form>
+
         <div class="tr-tiles" id="tr-tiles"></div>
 
         <section class="tr-card">
           <div class="tr-card-head">
             <h2 id="tr-title">Customers off supply over time</h2>
             <div class="tr-card-tools">
+              <button type="button" class="link-button" id="tr-zoom-use" hidden title="Make the zoomed period the custom window, so the tiles and incident register cover just that period">Use this period</button>
               <button type="button" class="btn small" id="tr-zoom-reset" hidden>Reset zoom</button>
               <button type="button" class="link-button" id="tr-table-toggle" aria-expanded="false" aria-controls="tr-table">Show data table</button>
               <div class="icon-seg" id="tr-chart" role="radiogroup" aria-label="Chart type">

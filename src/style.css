@@ -408,6 +408,13 @@ dialog.settings::backdrop { background: var(--backdrop); backdrop-filter: blur(2
 .seg.tr-seg { display: inline-grid; grid-auto-flow: column; grid-template-columns: none; }
 .seg.tr-seg button { padding: 6px 11px; }
 .tr-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.tr-custom { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 12px; border: 1px solid var(--accent-line); border-radius: 10px; background: color-mix(in srgb, var(--accent-bg) 45%, var(--surface)); }
+.tr-custom[hidden] { display: none; }
+.tr-custom label { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12.5px; }
+.tr-custom input { padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--text); }
+.tr-custom .link-button { margin: 0; }
+.tr-custom-msg { color: var(--muted); font-size: 12px; }
+.tr-custom-msg.error { color: #e5484d; font-weight: 600; }
 .tr-chips .chip { padding: 5px 11px 5px 9px; font-size: 12px; }
 .tr-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .tile { padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
